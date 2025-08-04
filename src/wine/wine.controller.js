@@ -4,29 +4,29 @@ function addRating(req, res) {
   const { wineName, rating, comment } = req.body;
   const updatedWine = wineService.addRating(wineName, rating, comment);
   if (updatedWine) {
-    res.json(updatedWine);
+    res.status(200).json(updatedWine);
   } else {
-    res.json({ message: "Bor nem található" });
+    res.status(404).json({ message: "Wine Not Found" });
   }
 }
 
 function getWines(req, res) {
   const allWines = wineService.getAllWines();
-  res.json(allWines);
+  res.status(200).json(allWines);
 }
 
 function addWine(req, res) {
   const newWine = wineService.addNewWine(req.body);
-  res.json(newWine);
+  res.status(201).json(newWine);
 }
 
 function approveWine(req, res) {
   const id = parseInt(req.params.id);
   const approve = wineService.approveWine(id);
   if (approve) {
-    res.json(approve);
+    res.status(200).json(approve);
   } else {
-    res.json({ message: "Bor nem található" });
+    res.status(404).json({ message: "Wine Not Found" });
   }
 }
 
@@ -35,9 +35,9 @@ function updateWine(req, res) {
   const updatedWinedata = { ...req.body, id };
   const updatedWine = wineService.updateWine(updatedWinedata);
   if (updatedWine) {
-    res.json(updatedWine);
+    res.status(200).json(updatedWine);
   } else {
-    res.json({ message: "Bor nem található" });
+    res.status(404).json({ message: "Wine Not Found" });
   }
 }
 
@@ -45,9 +45,9 @@ function deleteWine(req, res) {
   const id = parseInt(req.params.id);
   const deleted = wineService.deleteWine(id);
   if (deleted) {
-    res.send();
+    res.status(204).send();
   } else {
-    res.json({ message: "Bor nem található" });
+    res.status(404).json({ message: "Wine Not Found" });
   }
 }
 
