@@ -102,7 +102,6 @@ module.exports = {
   getAllWines,
   addNewWine,
   approveWine,
-  rejectWine,
   updateWine,
   deleteWine,
   addRating,
