@@ -1,16 +1,18 @@
+require("dotenv").config();
 const express = require("express");
+const cors = require("cors");
+const wineRoutes = require("./src/wine/wine.router.js");
+const connectDB = require("./src/database/connect.js");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware example
+connectDB();
+
+app.use(cors());
 app.use(express.json());
 
-// Example route
-app.get("/", (req, res) => {
-  res.send("Hello, Express!");
-});
+app.use("/api/wines", wineRoutes);
 
-// Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
