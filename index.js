@@ -1,8 +1,12 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const wineRoutes = require("./src/wine/wine.router.js");
+const connectDB = require("./src/database/connect.js");
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+connectDB();
 
 app.use(cors());
 app.use(express.json());
