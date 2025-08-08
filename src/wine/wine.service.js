@@ -4,16 +4,6 @@ async function getAllWines() {
   return await Wine.find();
 }
 
-async function addRating(wineName, winery, rating, comment) {
-  const wine = await Wine.findOne({ name: wineName, winery: winery });
-  if (wine) {
-    wine.ratings.push({ rating, comment });
-    await wine.save();
-    return wine;
-  }
-  return null;
-}
-
 async function addNewWine(wine) {
   const newWine = new Wine({
     ...wine,
@@ -24,22 +14,32 @@ async function addNewWine(wine) {
   return newWine;
 }
 
-async function approveWine(id) {
-  const wine = await Wine.findOne({ _id: id });
-  if (wine) {
-    wine.is_confirmed = true;
-    await wine.save();
-    return wine;
-  }
-  return null;
+async function addRating(id, rating, comment) {
+  const wine = await Wine.findById(id);
+  if (!wine) throw new Error("wine not found");
+  const newRating = {
+    rating,
+    comment,
+  };
+  wine.ratings.push(newRating);
+  await wine.save();
+  const updatedWine = await Wine.findById(id); // vagy populate-olt változat, ha kell
+  return updatedWine;
 }
 
-async function updateWine(updatedWine) {
-  const wine = await Wine.findById(updatedWine.id);
-  if (!wine) return null;
-  Object.assign(wine, updatedWine, { is_confirmed: true });
-  await wine.save();
-  return wine;
+async function updateWine(id, updatedData) {
+  const { _id, _v, ...cleanedUpdatedData } = updatedData;
+
+  const updatedWine = await Wine.findByIdAndUpdate(id, cleanedUpdatedData, {
+    new: true,
+    runValidators: true,
+  });
+
+  if (!updatedWine) {
+    throw new Error("wine not found");
+  }
+
+  return updatedWine;
 }
 
 async function deleteWine(id) {
@@ -50,7 +50,6 @@ async function deleteWine(id) {
 module.exports = {
   getAllWines,
   addNewWine,
-  approveWine,
   updateWine,
   deleteWine,
   addRating,
