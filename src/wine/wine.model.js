@@ -19,7 +19,10 @@ const WineSchema = new mongoose.Schema({
   aiFoodPairingEnabled: Boolean,
   imageUrl: String,
   is_award_winner: Boolean,
-  is_confirmed: Boolean,
+  is_confirmed: {
+    type: Boolean,
+    default: true,
+  },
   tags: [String],
   ratings: [mongoose.Schema.Types.Mixed],
 });
