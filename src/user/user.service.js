@@ -63,7 +63,7 @@ async function loginUser({ email, password }) {
 }
 
 async function getUser(userId) {
-  const user = await User.findById(userId).select("-password").populate({ path: "favoriteWines", select: "name" });
+  const user = await User.findById(userId).select("-password").populate({ path: "favoriteWines", select: "_id name" });
   // .populate({ path: "favoriteRecipes", select: "name" });
 
   if (!user) throw new Error("User not found");
