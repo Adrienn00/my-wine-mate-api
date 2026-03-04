@@ -24,5 +24,17 @@ function authMiddleware(req, res, next) {
     return res.status(403).json({ message: "Invalid or expired token" });
   }
 }
+function adminMiddleware(req, res, next) {
+  if (!req.user || !req.user.isAdmin) {
+    return res.status(403).json({
+      message: "Admin access required",
+    });
+  }
 
-module.exports = authMiddleware;
+  next();
+}
+
+module.exports = {
+  authMiddleware,
+  adminMiddleware,
+};

@@ -2,11 +2,15 @@ const express = require("express");
 const router = express.Router();
 
 const wineController = require("./wine.controller");
+const { authMiddleware, adminMiddleware } = require("../user/user.middleware");
+router.post("/:id/rating", authMiddleware, wineController.newRating);
 
-router.post("/:id/rating", wineController.newRating);
 router.get("/", wineController.getWines);
-router.post("/", wineController.addWine);
-router.put("/:id", wineController.updateWine);
-router.delete("/:id", wineController.deleteWine);
+
+router.post("/", authMiddleware, wineController.addWine);
+
+router.put("/:id", authMiddleware, adminMiddleware, wineController.updateWine);
+
+router.delete("/:id", authMiddleware, adminMiddleware, wineController.deleteWine);
 
 module.exports = router;
