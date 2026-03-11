@@ -1,4 +1,5 @@
 const wineService = require("../wine/wine.service.js");
+const User = require("../user/user.model");
 
 async function getWines(req, res) {
   try {
@@ -11,10 +12,17 @@ async function getWines(req, res) {
 
 async function addWine(req, res) {
   try {
-    const newWine = await wineService.addNewWine(req.body);
-    res.status(201).json(newWine);
-  } catch (err) {
-    res.status(500).json({ message: "Error while adding wine", error: err.message });
+    const wineData = {
+      ...req.body,
+      createdBy: req.user.id,
+      isConfirmed: req.user.isAdmin ? true : false,
+    };
+
+    const wine = await wineService.addWine(wineData);
+
+    res.status(201).json(wine);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 }
 
@@ -37,31 +45,57 @@ async function updateWine(req, res) {
   try {
     const id = req.params.id;
     const updatedData = req.body;
+
     const updatedWine = await wineService.updateWine(id, updatedData);
-    if (updatedWine) {
-      res.status(200).json(updatedWine);
-    } else {
-      res.status(404).json({ message: "Wine Not Found" });
+
+    if (!updatedWine) {
+      return res.status(404).json({ message: "Wine Not Found" });
     }
+
+    const user = await User.findById(updatedWine.createdBy);
+
+    if (user) {
+      // APPROVED
+      if (updatedData.is_confirmed === true) {
+        user.notifications.push({
+          message: `Your wine "${updatedWine.name}" has been approved.`,
+          type: "approved",
+        });
+      }
+
+      // REJECTED
+      if (updatedData.rejectionReason) {
+        user.notifications.push({
+          message: `Your wine "${updatedWine.name}" was rejected. Reason: ${updatedData.rejectionReason}`,
+          type: "rejected",
+        });
+      }
+
+      await user.save();
+    }
+
+    res.status(200).json(updatedWine);
   } catch (err) {
     res.status(500).json({ message: "Error while updating wine", error: err.message });
   }
 }
-
 async function deleteWine(req, res) {
   try {
     const id = req.params.id;
     const deleted = await wineService.deleteWine(id);
+
     if (deleted) {
       res.status(204).send();
     } else {
       res.status(404).json({ message: "Wine Not Found" });
     }
   } catch (err) {
-    res.status(500).json({ message: "Error while deleting wine", error: err.message });
+    res.status(500).json({
+      message: "Error while deleting wine",
+      error: err.message,
+    });
   }
 }
-
 module.exports = {
   getWines,
   addWine,
