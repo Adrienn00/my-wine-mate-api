@@ -13,6 +13,14 @@ const userSchema = new mongoose.Schema(
     isAdmin: { type: Boolean, default: false },
     favoriteWines: [{ type: mongoose.Schema.Types.ObjectId, ref: "Wine" }],
     favoriteRecipes: [{ type: mongoose.Schema.Types.ObjectId, ref: "Recipe" }],
+    notifications: [
+      {
+        message: { type: String },
+        type: { type: String }, // approved | rejected
+        createdAt: { type: Date, default: Date.now },
+        read: { type: Boolean, default: false },
+      },
+    ],
     preferences: {
       winery: [String],
       wineTypes: [String],
