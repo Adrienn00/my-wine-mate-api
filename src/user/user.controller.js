@@ -138,6 +138,15 @@ async function updateUserRole(req, res) {
   }
 }
 
+async function getStats(req, res) {
+  try {
+    const stats = await userService.getSystemStats();
+    return res.status(200).json(stats);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -151,4 +160,5 @@ module.exports = {
   removeFavoriteRecipe,
   deleteNotification,
   updateUserRole,
+  getStats,
 };

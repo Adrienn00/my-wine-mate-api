@@ -2,7 +2,7 @@ require("dotenv").config();
 const jwt = require("jsonwebtoken");
 const User = require("./user.model.js");
 const bcrypt = require("bcrypt");
-
+const Wine = require("../wine/wine.model.js");
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
@@ -128,6 +128,19 @@ async function updateUserRole(userId) {
   return user;
 }
 
+async function getSystemStats() {
+  const usersCount = await User.countDocuments();
+  const winesCount = await Wine.countDocuments();
+  const confirmedWinesCount = await Wine.countDocuments({ is_confirmed: true });
+  const pendingWinesCount = await Wine.countDocuments({ is_confirmed: false });
+  return {
+    usersCount,
+    winesCount,
+    confirmedWinesCount,
+    pendingWinesCount,
+  };
+}
+
 module.exports = {
   registerUser,
   loginUser,
@@ -140,4 +153,5 @@ module.exports = {
   deleteUser,
   getAllUsers,
   updateUserRole,
+  getSystemStats,
 };

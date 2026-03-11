@@ -13,6 +13,8 @@ router.delete("/profile", authMiddleware, userController.deleteUser);
 
 router.get("/all", authMiddleware, userController.getAllUsers);
 
+router.get("/stats", authMiddleware, adminMiddleware, userController.getStats);
+
 router.post("/favorite/wines", authMiddleware, userController.addFavoriteWine);
 router.delete("/favorite/wines/:id", authMiddleware, userController.removeFavoriteWine);
 
