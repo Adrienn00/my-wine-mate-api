@@ -19,4 +19,5 @@ router.delete("/favorite/wines/:id", authMiddleware, userController.removeFavori
 router.post("/favorite/recipes", authMiddleware, userController.addFavoriteRecipe);
 router.delete("/favorite/recipes/:id", authMiddleware, userController.removeFavoriteRecipe);
 
+router.delete("/notifications/:id", authMiddleware, userController.deleteNotification);
 module.exports = router;

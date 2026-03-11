@@ -1,4 +1,5 @@
 const userService = require("../user/user.service.js");
+const User = require("./user.model.js");
 
 async function register(req, res) {
   try {
@@ -104,6 +105,22 @@ async function removeFavoriteRecipe(req, res) {
     res.status(500).json({ message: error.message });
   }
 }
+async function deleteNotification(req, res) {
+  try {
+    const userId = req.user.id;
+    const notificationId = req.params.id;
+
+    const user = await User.findById(userId);
+
+    user.notifications = user.notifications.filter((n) => n._id.toString() !== notificationId);
+
+    await user.save();
+
+    res.status(200).json(user.notifications);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
 
 module.exports = {
   register,
@@ -116,4 +133,5 @@ module.exports = {
   removeFavoriteWine,
   addFavoriteRecipe,
   removeFavoriteRecipe,
+  deleteNotification,
 };
