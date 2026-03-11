@@ -4,12 +4,13 @@ async function getAllWines() {
   return await Wine.find();
 }
 
-async function addNewWine(wine) {
+async function addWine(wine) {
   const newWine = new Wine({
     ...wine,
     ratings: [],
-    is_confirmed: wine.is_confirmed ?? false,
+    is_confirmed: false,
   });
+
   await newWine.save();
   return newWine;
 }
@@ -17,13 +18,16 @@ async function addNewWine(wine) {
 async function addRating(id, rating, comment) {
   const wine = await Wine.findById(id);
   if (!wine) throw new Error("wine not found");
+
   const newRating = {
     rating,
     comment,
   };
+
   wine.ratings.push(newRating);
   await wine.save();
-  const updatedWine = await Wine.findById(id); // vagy populate-olt változat, ha kell
+
+  const updatedWine = await Wine.findById(id);
   return updatedWine;
 }
 
@@ -49,7 +53,7 @@ async function deleteWine(id) {
 
 module.exports = {
   getAllWines,
-  addNewWine,
+  addWine,
   updateWine,
   deleteWine,
   addRating,
