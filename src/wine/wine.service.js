@@ -25,14 +25,14 @@ async function addRating(id, rating, comment) {
   };
 
   wine.ratings.push(newRating);
+
   await wine.save();
 
-  const updatedWine = await Wine.findById(id);
-  return updatedWine;
+  return wine;
 }
 
 async function updateWine(id, updatedData) {
-  const { _id, _v, ...cleanedUpdatedData } = updatedData;
+  const { _id, __v, ...cleanedUpdatedData } = updatedData;
 
   const updatedWine = await Wine.findByIdAndUpdate(id, cleanedUpdatedData, {
     new: true,
