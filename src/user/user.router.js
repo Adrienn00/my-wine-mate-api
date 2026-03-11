@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 
-const { authMiddleware } = require("./user.middleware");
+const { authMiddleware, adminMiddleware } = require("./user.middleware");
 const userController = require("./user.controller");
 
 router.post("/register", userController.register);
@@ -20,4 +20,6 @@ router.post("/favorite/recipes", authMiddleware, userController.addFavoriteRecip
 router.delete("/favorite/recipes/:id", authMiddleware, userController.removeFavoriteRecipe);
 
 router.delete("/notifications/:id", authMiddleware, userController.deleteNotification);
+
+router.put("/role/:id", authMiddleware, adminMiddleware, userController.updateUserRole);
 module.exports = router;

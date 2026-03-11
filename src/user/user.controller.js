@@ -122,6 +122,22 @@ async function deleteNotification(req, res) {
   }
 }
 
+async function updateUserRole(req, res) {
+  try {
+    const { isAdmin } = req.body;
+
+    const user = await User.findById(req.params.id);
+
+    user.isAdmin = isAdmin;
+
+    await user.save();
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -134,4 +150,5 @@ module.exports = {
   addFavoriteRecipe,
   removeFavoriteRecipe,
   deleteNotification,
+  updateUserRole,
 };

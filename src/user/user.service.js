@@ -74,7 +74,7 @@ async function updateUser(userId, updatedData) {
   const user = await User.findByIdAndUpdate(userId, updatedData, {
     new: true,
     runValidators: true,
-  }).select("-password"); // ne küldje vissza a jelszót
+  }).select("-password");
   if (!user) throw new Error("User not found");
   return user;
 }
@@ -121,6 +121,13 @@ async function removeFavoriteRecipe(userId, recipeId) {
   return user.favoriteRecipes;
 }
 
+async function updateUserRole(userId) {
+  const user = await User.findById(userId);
+  user.isAdmin = isAdmin;
+  await user.save();
+  return user;
+}
+
 module.exports = {
   registerUser,
   loginUser,
@@ -132,4 +139,5 @@ module.exports = {
   getUser,
   deleteUser,
   getAllUsers,
+  updateUserRole,
 };
