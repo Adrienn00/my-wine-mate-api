@@ -4,6 +4,11 @@ async function getAllRecipes() {
   return await Recipe.find();
 }
 
+// EZT A FÜGGVÉNYT ADTUK HOZZÁ:
+async function getRecipeById(id) {
+  return await Recipe.findById(id);
+}
+
 async function addRecipe(recipe) {
   const newRecipe = new Recipe({
     ...recipe,
@@ -55,6 +60,7 @@ async function deleteRecipe(id) {
 
 module.exports = {
   getAllRecipes,
+  getRecipeById, // <--- NE FELEJTSD EL EXPORTÁLNI!
   addRecipe,
   updateRecipe,
   deleteRecipe,

@@ -8,6 +8,7 @@ const { authMiddleware, adminMiddleware } = require("../user/user.middleware");
 router.post("/:id/rating", authMiddleware, recipeController.newRating);
 
 router.get("/", recipeController.getRecipes);
+router.get("/:id", recipeController.getRecipesById);
 
 router.post("/", authMiddleware, recipeController.addRecipe);
 

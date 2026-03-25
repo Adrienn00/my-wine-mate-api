@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const User = require("./user.model.js");
 const bcrypt = require("bcrypt");
 const Wine = require("../wine/wine.model.js");
+const Recipe = require("../recipe/recipe.model.js"); // Ezt add hozzá a biztonság kedvéért
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
@@ -43,7 +44,9 @@ async function registerUser(userData) {
 }
 
 async function loginUser({ email, password }) {
-  const user = await User.findOne({ email });
+  // LOGIN-NÁL IS ÉRDEMES POPULATE-OT HASZNÁLNI, hogy az első belépéskor is jó legyen minden
+  const user = await User.findOne({ email }).populate("favoriteWines").populate("favoriteRecipes");
+
   if (!user) {
     throw new Error("Email is incorrect");
   }
@@ -58,14 +61,15 @@ async function loginUser({ email, password }) {
     username: user.username,
     email: user.email,
     isAdmin: user.isAdmin,
+    favoriteWines: user.favoriteWines, // Így rögtön megkapja a frontend
+    favoriteRecipes: user.favoriteRecipes,
     token,
   };
 }
 
+// EZT A FÜGGVÉNYT A CONTROLLERBŐL HIVOD, de a service-ben is legyen rendben:
 async function getUser(userId) {
-  const user = await User.findById(userId).select("-password").populate({ path: "favoriteWines", select: "_id name" });
-  // .populate({ path: "favoriteRecipes", select: "name" });
-
+  const user = await User.findById(userId).populate("favoriteWines").populate("favoriteRecipes");
   if (!user) throw new Error("User not found");
   return user;
 }
@@ -74,7 +78,11 @@ async function updateUser(userId, updatedData) {
   const user = await User.findByIdAndUpdate(userId, updatedData, {
     new: true,
     runValidators: true,
-  }).select("-password");
+  })
+    .select("-password")
+    .populate("favoriteWines")
+    .populate("favoriteRecipes");
+
   if (!user) throw new Error("User not found");
   return user;
 }
@@ -89,40 +97,52 @@ async function getAllUsers() {
   return await User.find().select("-password");
 }
 
+// --- KEDVENC BOROK JAVÍTVA ---
 async function addFavoriteWine(userId, wineId) {
   const user = await User.findById(userId);
   if (!user.favoriteWines.includes(wineId)) {
     user.favoriteWines.push(wineId);
     await user.save();
   }
-  return user.favoriteWines;
+  // Visszaadjuk a TELJES listát kifejtve
+  const updatedUser = await User.findById(userId).populate("favoriteWines");
+  return updatedUser.favoriteWines;
 }
 
 async function removeFavoriteWine(userId, wineId) {
   const user = await User.findById(userId);
   user.favoriteWines = user.favoriteWines.filter((id) => id.toString() !== wineId.toString());
   await user.save();
-  return user.favoriteWines;
+
+  const updatedUser = await User.findById(userId).populate("favoriteWines");
+  return updatedUser.favoriteWines;
 }
 
+// --- KEDVENC RECEPTEK JAVÍTVA ---
 async function addFavoriteRecipe(userId, recipeId) {
   const user = await User.findById(userId);
   if (!user.favoriteRecipes.includes(recipeId)) {
     user.favoriteRecipes.push(recipeId);
     await user.save();
   }
-  return user.favoriteRecipes;
+  // Visszaadjuk a TELJES listát kifejtve (ÍGY LESZ NEVE A RECEPTNEK!)
+  const updatedUser = await User.findById(userId).populate("favoriteRecipes");
+  return updatedUser.favoriteRecipes;
 }
 
 async function removeFavoriteRecipe(userId, recipeId) {
   const user = await User.findById(userId);
   user.favoriteRecipes = user.favoriteRecipes.filter((id) => id.toString() !== recipeId.toString());
   await user.save();
-  return user.favoriteRecipes;
+
+  const updatedUser = await User.findById(userId).populate("favoriteRecipes");
+  return updatedUser.favoriteRecipes;
 }
 
-async function updateUserRole(userId) {
+// JAVÍTVA: Az isAdmin paraméter hiányzott a függvényből
+async function updateUserRole(userId, isAdmin) {
   const user = await User.findById(userId);
+  if (!user) throw new Error("User not found");
   user.isAdmin = isAdmin;
   await user.save();
   return user;
