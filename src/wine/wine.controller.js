@@ -1,4 +1,5 @@
 const wineService = require("../wine/wine.service.js");
+const liveOffersService = require("../wine/liveOffers.service.js");
 const User = require("../user/user.model");
 
 async function getWines(req, res) {
@@ -41,6 +42,32 @@ async function newRating(req, res) {
   }
 }
 
+async function getLiveOffers(req, res) {
+  try {
+    const id = req.params.id;
+    const wine = await wineService.getWineById(id);
+
+    if (!wine) {
+      return res.status(404).json({ message: "Wine Not Found" });
+    }
+
+    const result = await liveOffersService.fetchLiveOffers({
+      wineName: wine.name,
+      winery: wine.winery,
+    });
+
+    return res.status(200).json({
+      wineId: wine._id,
+      wineName: wine.name,
+      source: result.source,
+      stale: result.stale,
+      offers: result.offers,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: "Error while fetching live offers", error: err.message });
+  }
+}
+
 async function updateWine(req, res) {
   try {
     const id = req.params.id;
@@ -55,7 +82,6 @@ async function updateWine(req, res) {
     const user = await User.findById(updatedWine.createdBy);
 
     if (user) {
-      // APPROVED
       if (updatedData.is_confirmed === true) {
         user.notifications.push({
           message: `Your wine "${updatedWine.name}" has been approved.`,
@@ -63,7 +89,6 @@ async function updateWine(req, res) {
         });
       }
 
-      // REJECTED
       if (updatedData.rejectionReason) {
         user.notifications.push({
           message: `Your wine "${updatedWine.name}" was rejected. Reason: ${updatedData.rejectionReason}`,
@@ -79,6 +104,7 @@ async function updateWine(req, res) {
     res.status(500).json({ message: "Error while updating wine", error: err.message });
   }
 }
+
 async function deleteWine(req, res) {
   try {
     const id = req.params.id;
@@ -96,10 +122,12 @@ async function deleteWine(req, res) {
     });
   }
 }
+
 module.exports = {
   getWines,
   addWine,
   updateWine,
   deleteWine,
   newRating,
+  getLiveOffers,
 };

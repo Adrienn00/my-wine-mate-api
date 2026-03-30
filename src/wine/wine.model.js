@@ -1,5 +1,16 @@
 const mongoose = require("mongoose");
 
+const purchaseOptionSchema = new mongoose.Schema(
+  {
+    shopName: { type: String, trim: true },
+    price: { type: Number },
+    currency: { type: String, default: "RON", trim: true },
+    url: { type: String, trim: true },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false }
+);
+
 const WineSchema = new mongoose.Schema({
   name: String,
   winery: String,
@@ -19,6 +30,7 @@ const WineSchema = new mongoose.Schema({
   aiFoodPairingEnabled: Boolean,
   imageUrl: String,
   is_award_winner: Boolean,
+  purchaseOptions: [purchaseOptionSchema],
 
   is_confirmed: {
     type: Boolean,
