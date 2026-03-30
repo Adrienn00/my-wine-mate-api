@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema(
     phoneNumber: { type: String },
     location: { type: String },
     postalCode: { type: String },
+    img: { type: String, default: "" },
     password: { type: String, required: true },
     isAdmin: { type: Boolean, default: false },
     favoriteWines: [{ type: mongoose.Schema.Types.ObjectId, ref: "Wine" }],
