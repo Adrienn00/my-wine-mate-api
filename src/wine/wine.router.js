@@ -4,6 +4,7 @@ const router = express.Router();
 const wineController = require("./wine.controller");
 const { authMiddleware, adminMiddleware } = require("../user/user.middleware");
 router.post("/:id/rating", authMiddleware, wineController.newRating);
+router.get("/:id/live-offers", authMiddleware, wineController.getLiveOffers);
 
 router.get("/", wineController.getWines);
 
