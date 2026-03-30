@@ -17,6 +17,7 @@ const userSchema = new mongoose.Schema(
       {
         message: { type: String },
         type: { type: String }, // approved | rejected
+        link: { type: String },
         createdAt: { type: Date, default: Date.now },
         read: { type: Boolean, default: false },
       },
