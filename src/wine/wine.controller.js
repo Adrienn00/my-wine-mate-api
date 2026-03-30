@@ -30,15 +30,61 @@ async function addWine(req, res) {
 async function newRating(req, res) {
   try {
     const id = req.params.id;
-    const { rating, comment } = req.body;
-    const updateRatings = await wineService.addRating(id, rating, comment);
+    const { rating, comment, criteria } = req.body || {};
+    const updateRatings = await wineService.addRating(id, {
+      rating,
+      comment,
+      criteria,
+      userId: req.user?.id,
+    });
+
+    const latestRating = updateRatings?.ratings?.[updateRatings.ratings.length - 1];
+    const hasComment = String(latestRating?.comment || "").trim().length > 0;
+
+    if (hasComment) {
+      const commenter = latestRating?.userName || req.user?.email || "Egy felhasználó";
+      const admins = await User.find({
+        isAdmin: true,
+        _id: { $ne: req.user?.id },
+      }).select("_id notifications");
+
+      await Promise.all(
+        admins.map(async (admin) => {
+          admin.notifications.push({
+            message: `Új hozzászólás érkezett a "${updateRatings.name}" borhoz (${commenter}).`,
+            type: "moderation",
+            link: `/wine/${updateRatings._id}`,
+          });
+          await admin.save();
+        })
+      );
+    }
+
     if (updateRatings) {
       res.status(200).json(updateRatings);
     } else {
       res.status(404).json({ message: "Wine Not Found" });
     }
   } catch (err) {
-    res.status(500).json({ message: "Error while updating ratings", error: err.message });
+    const statusCode = err.message === "A valid rating is required." ? 400 : 500;
+    res.status(statusCode).json({ message: "Error while updating ratings", error: err.message });
+  }
+}
+
+async function removeRating(req, res) {
+  try {
+    const id = req.params.id;
+    const ratingId = req.params.ratingId;
+    const updatedWine = await wineService.deleteRating(id, ratingId);
+    return res.status(200).json(updatedWine);
+  } catch (err) {
+    if (err.message === "wine not found") {
+      return res.status(404).json({ message: "Wine Not Found" });
+    }
+    if (err.message === "rating not found") {
+      return res.status(404).json({ message: "Rating Not Found" });
+    }
+    return res.status(500).json({ message: "Error while deleting rating", error: err.message });
   }
 }
 
@@ -129,5 +175,6 @@ module.exports = {
   updateWine,
   deleteWine,
   newRating,
+  removeRating,
   getLiveOffers,
 };

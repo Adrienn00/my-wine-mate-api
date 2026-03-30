@@ -1,4 +1,8 @@
 const Wine = require("./wine.model");
+const User = require("../user/user.model");
+const { randomUUID } = require("crypto");
+
+const RATING_FIELDS = ["tasteProfile", "aroma", "valueForMoney", "pairing"];
 
 function normalizePurchaseOptions(options = []) {
   if (!Array.isArray(options)) return [];
@@ -40,19 +44,86 @@ async function addWine(wine) {
   return newWine;
 }
 
-async function addRating(id, rating, comment) {
+function normalizeRatingValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const clamped = Math.max(1, Math.min(5, numeric));
+  return Number(clamped.toFixed(1));
+}
+
+function buildRatingEntry({ rating, comment, criteria = {}, userId, userName }) {
+  const normalizedCriteria = {};
+  const criteriaValues = [];
+
+  for (const key of RATING_FIELDS) {
+    const normalized = normalizeRatingValue(criteria[key]);
+    if (normalized !== null) {
+      normalizedCriteria[key] = normalized;
+      criteriaValues.push(normalized);
+    }
+  }
+
+  const fallbackRating = normalizeRatingValue(rating);
+  const overall =
+    criteriaValues.length > 0
+      ? Number((criteriaValues.reduce((sum, value) => sum + value, 0) / criteriaValues.length).toFixed(1))
+      : fallbackRating;
+
+  if (overall === null) {
+    throw new Error("A valid rating is required.");
+  }
+
+  return {
+    ratingId: randomUUID(),
+    criteria: normalizedCriteria,
+    overall,
+    rating: overall,
+    comment: String(comment || "").trim(),
+    userId: userId || null,
+    userName: String(userName || "").trim() || "Ismeretlen felhasználó",
+    createdAt: new Date(),
+  };
+}
+
+async function resolveRatingUserName({ userId, userName }) {
+  const trimmed = String(userName || "").trim();
+  if (trimmed) return trimmed;
+  if (!userId) return "Ismeretlen felhasználó";
+
+  const user = await User.findById(userId).select("username firstName lastName");
+  if (!user) return "Ismeretlen felhasználó";
+
+  const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+  return fullName || user.username || "Ismeretlen felhasználó";
+}
+
+async function addRating(id, payload = {}) {
   const wine = await Wine.findById(id);
   if (!wine) throw new Error("wine not found");
 
-  const newRating = {
-    rating,
-    comment,
-  };
-
-  wine.ratings.push(newRating);
+  const userName = await resolveRatingUserName(payload);
+  wine.ratings.push(buildRatingEntry({ ...payload, userName }));
 
   await wine.save();
 
+  return wine;
+}
+
+async function deleteRating(wineId, ratingId) {
+  const wine = await Wine.findById(wineId);
+  if (!wine) throw new Error("wine not found");
+
+  const beforeCount = Array.isArray(wine.ratings) ? wine.ratings.length : 0;
+  wine.ratings = (wine.ratings || []).filter((entry) => {
+    const currentId = String(entry?.ratingId || entry?._id || "");
+    return currentId !== String(ratingId);
+  });
+
+  if (wine.ratings.length === beforeCount) {
+    throw new Error("rating not found");
+  }
+
+  await wine.save();
   return wine;
 }
 
@@ -87,4 +158,5 @@ module.exports = {
   updateWine,
   deleteWine,
   addRating,
+  deleteRating,
 };
