@@ -10,7 +10,7 @@ function parsePriceToNumber(rawPrice) {
 function mapSerpApiOffer(item = {}) {
   const price = parsePriceToNumber(item.price);
   return {
-    shopName: item.source || item.seller || 'Ismeretlen bolt',
+    shopName: item.source || item.seller || 'Unknown shop',
     title: item.title || '',
     price,
     currency: item.currency || 'RON',
@@ -25,8 +25,8 @@ function buildFallbackOffers(wineName = '', winery = '') {
 
   return [
     {
-      shopName: 'Árukereső',
-      title: 'Keresés',
+      shopName: 'Arukereso',
+      title: 'Search',
       price: null,
       currency: 'RON',
       url: `https://www.arukereso.hu/?st=${query}`,
@@ -34,7 +34,7 @@ function buildFallbackOffers(wineName = '', winery = '') {
     },
     {
       shopName: 'Google Shopping',
-      title: 'Keresés',
+      title: 'Search',
       price: null,
       currency: 'RON',
       url: `https://www.google.com/search?tbm=shop&q=${query}`,
@@ -42,7 +42,7 @@ function buildFallbackOffers(wineName = '', winery = '') {
     },
     {
       shopName: 'Wine-Searcher',
-      title: 'Keresés',
+      title: 'Search',
       price: null,
       currency: 'EUR',
       url: `https://www.wine-searcher.com/find/${query}`,
@@ -50,7 +50,7 @@ function buildFallbackOffers(wineName = '', winery = '') {
     },
     {
       shopName: 'Vivino',
-      title: 'Keresés',
+      title: 'Search',
       price: null,
       currency: 'RON',
       url: `https://www.vivino.com/search/wines?q=${query}`,

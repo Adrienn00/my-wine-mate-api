@@ -80,7 +80,7 @@ function buildRatingEntry({ rating, comment, criteria = {}, userId, userName }) 
     rating: overall,
     comment: String(comment || "").trim(),
     userId: userId || null,
-    userName: String(userName || "").trim() || "Ismeretlen felhasználó",
+    userName: String(userName || "").trim() || "Unknown user",
     createdAt: new Date(),
   };
 }
@@ -88,13 +88,13 @@ function buildRatingEntry({ rating, comment, criteria = {}, userId, userName }) 
 async function resolveRatingUserName({ userId, userName }) {
   const trimmed = String(userName || "").trim();
   if (trimmed) return trimmed;
-  if (!userId) return "Ismeretlen felhasználó";
+  if (!userId) return "Unknown user";
 
   const user = await User.findById(userId).select("username firstName lastName");
-  if (!user) return "Ismeretlen felhasználó";
+  if (!user) return "Unknown user";
 
   const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
-  return fullName || user.username || "Ismeretlen felhasználó";
+  return fullName || user.username || "Unknown user";
 }
 
 async function addRating(id, payload = {}) {
