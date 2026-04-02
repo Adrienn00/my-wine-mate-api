@@ -24,6 +24,30 @@ function authMiddleware(req, res, next) {
     return res.status(403).json({ message: "Invalid or expired token" });
   }
 }
+
+function optionalAuthMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return next();
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = {
+      id: decoded.id,
+      email: decoded.email,
+      isAdmin: decoded.isAdmin,
+    };
+  } catch (error) {
+    req.user = null;
+  }
+
+  return next();
+}
+
 function adminMiddleware(req, res, next) {
   if (!req.user || !req.user.isAdmin) {
     return res.status(403).json({
@@ -36,5 +60,6 @@ function adminMiddleware(req, res, next) {
 
 module.exports = {
   authMiddleware,
+  optionalAuthMiddleware,
   adminMiddleware,
 };

@@ -5,7 +5,13 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "node index.js"
+    "dev": "node index.js",
+    "ai:train": ".venv/bin/python ai/train_pairing_model.py",
+    "ai:train-from-dataset": ".venv/bin/python ai/train_pairing_model.py --use-existing-dataset",
+    "ai:recommend": ".venv/bin/python ai/recommend_pairings.py",
+    "ai:autolabel": ".venv/bin/python ai/generate_silver_labels.py",
+    "ai:seed-kb": ".venv/bin/python ai/seed_pairing_knowledge.py",
+    "ai:pairing-dataset": ".venv/bin/python ai/generate_pairing_dataset.py"
   },
   "keywords": [],
   "author": "",
