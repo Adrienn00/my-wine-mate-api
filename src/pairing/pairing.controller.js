@@ -20,6 +20,7 @@ async function getAiRecommendations(req, res) {
     const recipeId = req.query.recipeId;
     const wineId = req.query.wineId;
     const topK = Number.parseInt(req.query.topK || "5", 10);
+    const engine = req.query.engine || "auto";
 
     if (Boolean(recipeId) === Boolean(wineId)) {
       return res.status(400).json({
@@ -27,10 +28,11 @@ async function getAiRecommendations(req, res) {
       });
     }
 
-    const recommendations = await pairingService.getAiRecommendations({
+    const recommendations = await pairingService.getAiRecommendationsByEngine({
       recipeId,
       wineId,
       topK: Number.isFinite(topK) && topK > 0 ? topK : 5,
+      engine,
     });
 
     return res.status(200).json(recommendations);
@@ -39,7 +41,9 @@ async function getAiRecommendations(req, res) {
     const statusCode =
       message.includes("not found") || message.includes("Invalid Mongo ObjectId")
         ? 404
-        : message.includes("Train the model first") || message.includes("Pass exactly one")
+        : message.includes("Train the model first") ||
+            message.includes("Pass exactly one") ||
+            message.includes("Invalid recommendation engine")
           ? 400
           : 500;
 

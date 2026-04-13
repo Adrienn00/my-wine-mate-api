@@ -11,6 +11,7 @@ yarn-error.log*
 # dotenv environment variables file
 .env
 .env.*
+!.env.example
 
 # OS-specific files
 .DS_Store

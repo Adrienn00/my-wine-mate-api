@@ -5,6 +5,7 @@ const { promisify } = require("util");
 const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
+const { getLlmPairingRecommendations, isLlmConfigured } = require("./pairingLlm.service");
 
 const execFileAsync = promisify(execFile);
 const BACKEND_ROOT = path.resolve(__dirname, "../..");
@@ -57,6 +58,27 @@ async function getAiRecommendations({ recipeId, wineId, topK = 5 }) {
     throw new Error("Pass exactly one of recipeId or wineId.");
   }
 
+  return getAiRecommendationsByEngine({
+    recipeId,
+    wineId,
+    topK,
+    engine: "auto",
+  });
+}
+
+function normalizeEngine(engine) {
+  const clean = String(engine || "auto").trim().toLowerCase();
+  if (["auto", "llm", "xgboost"].includes(clean)) {
+    return clean;
+  }
+  throw new Error("Invalid recommendation engine.");
+}
+
+async function getXgboostRecommendations({ recipeId, wineId, topK = 5 }) {
+  if (Boolean(recipeId) === Boolean(wineId)) {
+    throw new Error("Pass exactly one of recipeId or wineId.");
+  }
+
   if (!fs.existsSync(MODEL_PATH)) {
     throw new Error("AI model not found. Train the model first.");
   }
@@ -80,7 +102,35 @@ async function getAiRecommendations({ recipeId, wineId, topK = 5 }) {
     throw new Error(String(stderr || "The AI recommender returned no output.").trim());
   }
 
-  return JSON.parse(rawOutput);
+  const parsed = JSON.parse(rawOutput);
+  return {
+    ...parsed,
+    engine: "xgboost",
+  };
+}
+
+async function getAiRecommendationsByEngine({ recipeId, wineId, topK = 5, engine = "auto" }) {
+  const normalizedEngine = normalizeEngine(engine);
+
+  if (normalizedEngine === "xgboost") {
+    return getXgboostRecommendations({ recipeId, wineId, topK });
+  }
+
+  if (normalizedEngine === "llm") {
+    return getLlmPairingRecommendations({ recipeId, wineId, topK });
+  }
+
+  if (isLlmConfigured()) {
+    try {
+      return await getLlmPairingRecommendations({ recipeId, wineId, topK });
+    } catch (error) {
+      if (!fs.existsSync(MODEL_PATH)) {
+        throw error;
+      }
+    }
+  }
+
+  return getXgboostRecommendations({ recipeId, wineId, topK });
 }
 
 async function savePairingFeedback({
@@ -147,5 +197,6 @@ module.exports = {
   updatePairingRule,
   deletePairingRule,
   getAiRecommendations,
+  getAiRecommendationsByEngine,
   savePairingFeedback,
 };
