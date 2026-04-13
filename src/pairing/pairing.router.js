@@ -10,6 +10,7 @@ const {
 
 router.get("/", pairingController.getPairingRules);
 router.get("/recommend", pairingController.getAiRecommendations);
+router.get("/recommend-tabs", optionalAuthMiddleware, pairingController.getRecommendationTabs);
 router.post("/feedback", optionalAuthMiddleware, pairingController.savePairingFeedback);
 router.post("/", authMiddleware, adminMiddleware, pairingController.addPairingRule);
 router.put("/:id", authMiddleware, adminMiddleware, pairingController.updatePairingRule);

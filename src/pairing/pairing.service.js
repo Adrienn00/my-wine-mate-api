@@ -5,11 +5,11 @@ const { promisify } = require("util");
 const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
-const { getLlmPairingRecommendations, isLlmConfigured } = require("./pairingLlm.service");
 
 const execFileAsync = promisify(execFile);
 const BACKEND_ROOT = path.resolve(__dirname, "../..");
 const AI_SCRIPT_PATH = path.join(BACKEND_ROOT, "ai", "recommend_pairings.py");
+const LLM_SCRIPT_PATH = path.join(BACKEND_ROOT, "ai", "llm", "llm_recommend_pairings.py");
 const VENV_PYTHON_PATH = path.join(BACKEND_ROOT, ".venv", "bin", "python");
 const MODEL_PATH = path.join(BACKEND_ROOT, "ai", "artifacts", "xgboost_pairing_model.joblib");
 
@@ -58,12 +58,7 @@ async function getAiRecommendations({ recipeId, wineId, topK = 5 }) {
     throw new Error("Pass exactly one of recipeId or wineId.");
   }
 
-  return getAiRecommendationsByEngine({
-    recipeId,
-    wineId,
-    topK,
-    engine: "auto",
-  });
+  return getAiRecommendationsByEngine({ recipeId, wineId, topK, engine: "auto" });
 }
 
 function normalizeEngine(engine) {
@@ -74,6 +69,9 @@ function normalizeEngine(engine) {
   throw new Error("Invalid recommendation engine.");
 }
 
+function isLlmConfigured() {
+  return Boolean(String(process.env.GROQ_API_KEY || "").trim());
+}
 async function getXgboostRecommendations({ recipeId, wineId, topK = 5 }) {
   if (Boolean(recipeId) === Boolean(wineId)) {
     throw new Error("Pass exactly one of recipeId or wineId.");
@@ -109,7 +107,60 @@ async function getXgboostRecommendations({ recipeId, wineId, topK = 5 }) {
   };
 }
 
-async function getAiRecommendationsByEngine({ recipeId, wineId, topK = 5, engine = "auto" }) {
+async function getLlmRecommendations({
+  recipeId,
+  wineId,
+  topK = 5,
+  maxCandidates = 25,
+  userId = null,
+  usePreferences = false,
+}) {
+  if (Boolean(recipeId) === Boolean(wineId)) {
+    throw new Error("Pass exactly one of recipeId or wineId.");
+  }
+
+  if (!fs.existsSync(LLM_SCRIPT_PATH)) {
+    throw new Error("LLM recommender script not found.");
+  }
+
+  const pythonExecutable = resolvePythonExecutable();
+  const args = [LLM_SCRIPT_PATH, "--top-k", String(topK), "--max-candidates", String(maxCandidates)];
+
+  if (recipeId) {
+    args.push("--recipe-id", String(recipeId));
+  } else {
+    args.push("--wine-id", String(wineId));
+  }
+
+  if (usePreferences && userId) {
+    args.push("--use-preferences", "--user-id", String(userId));
+  }
+
+  const { stdout, stderr } = await execFileAsync(pythonExecutable, args, {
+    cwd: BACKEND_ROOT,
+    timeout: 120000,
+  });
+
+  const rawOutput = String(stdout || "").trim();
+  if (!rawOutput) {
+    throw new Error(String(stderr || "The LLM recommender returned no output.").trim());
+  }
+
+  const parsed = JSON.parse(rawOutput);
+  return {
+    ...parsed,
+    engine: "llm",
+  };
+}
+
+async function getAiRecommendationsByEngine({
+  recipeId,
+  wineId,
+  topK = 5,
+  engine = "auto",
+  userId = null,
+  usePreferences = false,
+}) {
   const normalizedEngine = normalizeEngine(engine);
 
   if (normalizedEngine === "xgboost") {
@@ -117,20 +168,70 @@ async function getAiRecommendationsByEngine({ recipeId, wineId, topK = 5, engine
   }
 
   if (normalizedEngine === "llm") {
-    return getLlmPairingRecommendations({ recipeId, wineId, topK });
+    return getLlmRecommendations({ recipeId, wineId, topK, userId, usePreferences });
   }
 
   if (isLlmConfigured()) {
-    try {
-      return await getLlmPairingRecommendations({ recipeId, wineId, topK });
-    } catch (error) {
-      if (!fs.existsSync(MODEL_PATH)) {
-        throw error;
+    return getLlmRecommendations({ recipeId, wineId, topK, userId, usePreferences });
+  }
+
+  throw new Error("LLM recommender is not configured. Set GROQ_API_KEY to enable recommendations.");
+}
+
+function buildRecommendationTabs(results = [], perTab = 3) {
+  const grouped = new Map();
+
+  for (const item of results) {
+    const categories = Array.isArray(item?.categories) && item.categories.length ? item.categories : ["Recommended"];
+
+    for (const category of categories) {
+      const key = String(category || "recommended").trim() || "recommended";
+      if (!grouped.has(key)) {
+        grouped.set(key, []);
       }
+      grouped.get(key).push(item);
     }
   }
 
-  return getXgboostRecommendations({ recipeId, wineId, topK });
+  return Array.from(grouped.entries())
+    .map(([category, items]) => ({
+      key: category.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      label: category,
+      description: `Recipes in the "${category}" category that pair well with the selected wine.`,
+      results: items.slice(0, perTab),
+    }))
+    .filter((tab) => tab.results.length > 0)
+    .sort((left, right) => {
+      const leftScore = Number(left.results[0]?.probability ?? 0);
+      const rightScore = Number(right.results[0]?.probability ?? 0);
+      return rightScore - leftScore;
+    });
+}
+
+async function getRecommendationTabs({
+  wineId,
+  userId = null,
+  usePreferences = false,
+  topK = 18,
+  perTab = 3,
+  engine = "auto",
+}) {
+  if (!wineId) {
+    throw new Error("Pass wineId.");
+  }
+
+  const recommendations = await getAiRecommendationsByEngine({
+    wineId,
+    topK,
+    engine,
+    userId,
+    usePreferences,
+  });
+
+  return {
+    wineId,
+    tabs: buildRecommendationTabs(recommendations.results || [], perTab),
+  };
 }
 
 async function savePairingFeedback({
@@ -198,5 +299,6 @@ module.exports = {
   deletePairingRule,
   getAiRecommendations,
   getAiRecommendationsByEngine,
+  getRecommendationTabs,
   savePairingFeedback,
 };

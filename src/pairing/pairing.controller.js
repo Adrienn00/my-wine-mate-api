@@ -21,6 +21,7 @@ async function getAiRecommendations(req, res) {
     const wineId = req.query.wineId;
     const topK = Number.parseInt(req.query.topK || "5", 10);
     const engine = req.query.engine || "auto";
+    const usePreferences = String(req.query.usePreferences || "false") === "true";
 
     if (Boolean(recipeId) === Boolean(wineId)) {
       return res.status(400).json({
@@ -33,6 +34,8 @@ async function getAiRecommendations(req, res) {
       wineId,
       topK: Number.isFinite(topK) && topK > 0 ? topK : 5,
       engine,
+      userId: req.user?.id || req.query.userId || null,
+      usePreferences,
     });
 
     return res.status(200).json(recommendations);
@@ -49,6 +52,46 @@ async function getAiRecommendations(req, res) {
 
     return res.status(statusCode).json({
       message: "Error while generating AI recommendations",
+      error: error.message,
+    });
+  }
+}
+
+async function getRecommendationTabs(req, res) {
+  try {
+    const wineId = req.query.wineId;
+    const topK = Number.parseInt(req.query.topK || "18", 10);
+    const perTab = Number.parseInt(req.query.perTab || "3", 10);
+    const engine = req.query.engine || "auto";
+    const usePreferences = String(req.query.usePreferences || "false") === "true";
+
+    if (!wineId) {
+      return res.status(400).json({
+        message: "Pass wineId.",
+      });
+    }
+
+    const tabs = await pairingService.getRecommendationTabs({
+      wineId,
+      topK: Number.isFinite(topK) && topK > 0 ? topK : 18,
+      perTab: Number.isFinite(perTab) && perTab > 0 ? perTab : 3,
+      engine,
+      userId: req.user?.id || req.query.userId || null,
+      usePreferences,
+    });
+
+    return res.status(200).json(tabs);
+  } catch (error) {
+    const message = String(error.message || "");
+    const statusCode =
+      message.includes("not found") || message.includes("Invalid Mongo ObjectId")
+        ? 404
+        : message.includes("Pass wineId") || message.includes("Invalid recommendation engine")
+          ? 400
+          : 500;
+
+    return res.status(statusCode).json({
+      message: "Error while generating recommendation tabs",
       error: error.message,
     });
   }
@@ -125,6 +168,7 @@ async function deletePairingRule(req, res) {
 module.exports = {
   getPairingRules,
   getAiRecommendations,
+  getRecommendationTabs,
   savePairingFeedback,
   addPairingRule,
   updatePairingRule,
