@@ -3,10 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 from pathlib import Path
 
 import joblib
 from bson import ObjectId
+
+CURRENT_DIR = Path(__file__).resolve().parent
+AI_ROOT = CURRENT_DIR.parent
+if str(AI_ROOT) not in sys.path:
+    sys.path.insert(0, str(AI_ROOT))
 
 from pairing_common import (
     ARTIFACTS_DIR,

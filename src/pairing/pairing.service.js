@@ -8,7 +8,7 @@ const mongoose = require("mongoose");
 
 const execFileAsync = promisify(execFile);
 const BACKEND_ROOT = path.resolve(__dirname, "../..");
-const AI_SCRIPT_PATH = path.join(BACKEND_ROOT, "ai", "recommend_pairings.py");
+const AI_SCRIPT_PATH = path.join(BACKEND_ROOT, "ai", "xgboost", "recommend_pairings.py");
 const LLM_SCRIPT_PATH = path.join(BACKEND_ROOT, "ai", "llm", "llm_recommend_pairings.py");
 const VENV_PYTHON_PATH = path.join(BACKEND_ROOT, ".venv", "bin", "python");
 const MODEL_PATH = path.join(BACKEND_ROOT, "ai", "artifacts", "xgboost_pairing_model.joblib");
