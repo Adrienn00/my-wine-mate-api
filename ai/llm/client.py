@@ -9,7 +9,15 @@ import urllib.request
 log = logging.getLogger(__name__)
 
 
-def call_llm(prompt: str) -> dict:
+DEFAULT_SYSTEM_PROMPT = (
+    "You are an expert sommelier. "
+    "Select only from the provided candidates. "
+    "If user preferences are provided, prioritize them in the ranking. "
+    "Return JSON only."
+)
+
+
+def call_llm(prompt: str, system_prompt: str | None = None) -> dict:
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("Missing environment variable: GROQ_API_KEY")
@@ -30,12 +38,7 @@ def call_llm(prompt: str) -> dict:
         "messages": [
             {
                 "role": "system",
-                "content": (
-                    "You are a wine and food pairing assistant. "
-                    "Select only from the provided candidates. "
-                    "If user preferences are provided, prioritize them in the ranking. "
-                    "Return JSON only."
-                ),
+                "content": system_prompt or DEFAULT_SYSTEM_PROMPT,
             },
             {"role": "user", "content": prompt},
         ],

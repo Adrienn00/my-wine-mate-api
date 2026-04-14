@@ -74,37 +74,49 @@ class PreferenceProfile:
             or self.exclude_animal_products
         )
 
-    def allows_recipe(self, recipe_signals: dict[str, Any]) -> bool:
-        categories = {normalize_text(value) for value in recipe_signals.get("categories", [])}
-        meat_types = {normalize_text(value) for value in recipe_signals.get("meat_types", [])}
-        main_ingredients = {normalize_text(value) for value in recipe_signals.get("main_ingredients", [])}
 
-        if self.exclude_meat and meat_types:
-            return False
-        if self.exclude_animal_products and (meat_types or {"cheese"} & main_ingredients):
-            return "vegan" in categories
-        return True
+@dataclass
+class WinePreferenceProfile:
+    preferred_types: set[str] = field(default_factory=set)
+    preferred_styles: set[str] = field(default_factory=set)
+    preferred_flavours: set[str] = field(default_factory=set)
+    preferred_regions: set[str] = field(default_factory=set)
+    preferred_alcohol_levels: set[str] = field(default_factory=set)
+    preferred_foods: set[str] = field(default_factory=set)
+    preferred_price_ranges: set[str] = field(default_factory=set)
+    preferred_year: str = ""
+    weight_type: float = 2.6
+    weight_style: float = 2.2
+    weight_flavour: float = 2.4
+    weight_region: float = 1.4
+    weight_alcohol: float = 1.0
+    weight_food: float = 1.6
 
-    def score_recipe(self, recipe_signals: dict[str, Any]) -> float:
-        if not self.has_preferences:
-            return 0.0
+    @classmethod
+    def from_raw(cls, preferences: dict[str, Any] | None) -> "WinePreferenceProfile":
+        if not preferences:
+            return cls()
 
-        categories = {normalize_text(value) for value in recipe_signals.get("categories", [])}
-        meat_types = {normalize_text(value) for value in recipe_signals.get("meat_types", [])}
-        dish_types = {normalize_text(value) for value in recipe_signals.get("dish_types", [])}
-        main_ingredients = {normalize_text(value) for value in recipe_signals.get("main_ingredients", [])}
+        return cls(
+            preferred_types=set(normalize_preference_values(preferences.get("wineTypes"))),
+            preferred_styles=set(normalize_preference_values(preferences.get("style"))),
+            preferred_flavours=set(normalize_preference_values(preferences.get("flavourProfile"))),
+            preferred_regions=set(normalize_preference_values(preferences.get("regions"))),
+            preferred_alcohol_levels=set(normalize_preference_values(preferences.get("alcoholLevels"))),
+            preferred_foods=set(normalize_preference_values(preferences.get("foodPreferences"))),
+            preferred_price_ranges=set(normalize_preference_values(preferences.get("priceRanges"))),
+            preferred_year=normalize_text(preferences.get("wineYears")),
+        )
 
-        score = 0.0
-        if self.preferred_categories & categories:
-            score += self.weight_category
-        if self.preferred_meat_types & meat_types:
-            score += self.weight_meat
-        if self.preferred_dish_types & dish_types:
-            score += self.weight_dish
-        if self.preferred_main_ingredients & main_ingredients:
-            score += self.weight_ingredient
-        if self.exclude_meat and not meat_types:
-            score += self.weight_no_meat
-        if self.exclude_animal_products and "vegan" in categories:
-            score += self.weight_vegan
-        return score
+    @property
+    def has_preferences(self) -> bool:
+        return bool(
+            self.preferred_types
+            or self.preferred_styles
+            or self.preferred_flavours
+            or self.preferred_regions
+            or self.preferred_alcohol_levels
+            or self.preferred_foods
+            or self.preferred_price_ranges
+            or self.preferred_year
+        )

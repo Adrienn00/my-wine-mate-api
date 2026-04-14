@@ -3,22 +3,21 @@ from __future__ import annotations
 from typing import Any
 
 from pairing_common import extract_recipe_signals, extract_wine_signals, mongo_database
-
-from llm.candidates import (
-    build_candidates_for_recipe,
-    build_candidates_for_wine,
-    fetch_confirmed_recipes,
-    fetch_confirmed_wines,
-)
+from llm.candidates import fetch_confirmed_recipes, fetch_confirmed_wines
 from llm.client import call_llm
 from llm.common import parse_object_id
-from llm.preferences import PreferenceProfile
+from llm.preferences import PreferenceProfile, WinePreferenceProfile
 from llm.serializers import (
     build_recipe_to_wine_prompt,
     build_wine_to_recipe_prompt,
     parse_recipe_to_wine_results,
     parse_wine_to_recipe_results,
 )
+from mcp.retrieval import build_recipe_candidates_via_search_plan, build_wine_candidates_via_search_plan
+
+
+def _recommendation_variant_suffix(preferences: dict[str, Any] | None) -> str:
+    return "preferences" if preferences else "general"
 
 
 def _reason_for_recipe_candidate(recipe: dict[str, Any], wine: dict[str, Any], profile: PreferenceProfile) -> str:
@@ -66,6 +65,23 @@ def _reason_for_wine_candidate(recipe: dict[str, Any], wine: dict[str, Any]) -> 
     return " ".join(reasons) or "Recommended from local pairing signals."
 
 
+def _reason_for_wine_candidate_with_preferences(
+    recipe: dict[str, Any], wine: dict[str, Any], profile: WinePreferenceProfile
+) -> str:
+    base_reason = _reason_for_wine_candidate(recipe, wine)
+    wine_signals = extract_wine_signals(wine)
+    reasons = [base_reason] if base_reason else []
+
+    if profile.preferred_types and str(wine_signals.get("type", "")).lower() in profile.preferred_types:
+        reasons.append("Also matches your preferred wine type.")
+    if profile.preferred_styles and str(wine_signals.get("style", "")).lower() in profile.preferred_styles:
+        reasons.append("Fits your preferred wine style.")
+    if profile.preferred_flavours & {str(v).lower() for v in wine_signals.get("flavours", [])}:
+        reasons.append("Includes flavour notes you like.")
+
+    return " ".join(reasons) or "Recommended from local pairing signals and your saved preferences."
+
+
 def _fallback_recipe_results(candidates: list[dict[str, Any]], wine: dict[str, Any], top_k: int, profile: PreferenceProfile) -> list[dict[str, Any]]:
     sliced = candidates[:top_k]
     total = max(1, len(sliced))
@@ -85,7 +101,12 @@ def _fallback_recipe_results(candidates: list[dict[str, Any]], wine: dict[str, A
     return results
 
 
-def _fallback_wine_results(candidates: list[dict[str, Any]], recipe: dict[str, Any], top_k: int) -> list[dict[str, Any]]:
+def _fallback_wine_results(
+    candidates: list[dict[str, Any]],
+    recipe: dict[str, Any],
+    top_k: int,
+    profile: WinePreferenceProfile | None = None,
+) -> list[dict[str, Any]]:
     sliced = candidates[:top_k]
     total = max(1, len(sliced))
     results = []
@@ -99,7 +120,11 @@ def _fallback_wine_results(candidates: list[dict[str, Any]], recipe: dict[str, A
                 "probability": probability,
                 "type": wine.get("type", ""),
                 "style": wine.get("style", ""),
-                "reason": _reason_for_wine_candidate(recipe, wine),
+                "reason": (
+                    _reason_for_wine_candidate_with_preferences(recipe, wine, profile)
+                    if profile and profile.has_preferences
+                    else _reason_for_wine_candidate(recipe, wine)
+                ),
             }
         )
     return results
@@ -124,18 +149,19 @@ def recommend_for_recipe(recipe_id: str, top_k: int, max_candidates: int, prefer
         raise RuntimeError(f"Recipe not found: {recipe_id}")
 
     wines = fetch_confirmed_wines(db)
-    candidates = build_candidates_for_recipe(recipe, wines, max_candidates)
+    profile = WinePreferenceProfile.from_raw(preferences)
+    candidates = build_wine_candidates_via_search_plan(recipe, wines, preferences, max_candidates)
     try:
         llm_response = call_llm(build_recipe_to_wine_prompt(recipe, candidates, preferences))
         results = parse_recipe_to_wine_results(llm_response, top_k)
         if results:
-            source = "mongodb:wines"
+            source = f"mongodb:wines:llm-agent:{_recommendation_variant_suffix(preferences)}"
         else:
-            results = _fallback_wine_results(candidates, recipe, top_k)
-            source = "mongodb:wines:fallback-empty"
+            results = _fallback_wine_results(candidates, recipe, top_k, profile)
+            source = f"mongodb:wines:fallback-empty:{_recommendation_variant_suffix(preferences)}"
     except Exception:
-        results = _fallback_wine_results(candidates, recipe, top_k)
-        source = "mongodb:wines:fallback"
+        results = _fallback_wine_results(candidates, recipe, top_k, profile)
+        source = f"mongodb:wines:fallback:{_recommendation_variant_suffix(preferences)}"
 
     return {
         "mode": "recipe_to_wine",
@@ -153,18 +179,18 @@ def recommend_for_wine(wine_id: str, top_k: int, max_candidates: int, preference
 
     recipes = fetch_confirmed_recipes(db)
     profile = PreferenceProfile.from_raw(preferences)
-    candidates = build_candidates_for_wine(wine, recipes, max_candidates, profile)
+    candidates = build_recipe_candidates_via_search_plan(wine, recipes, preferences, max_candidates)
     try:
         llm_response = call_llm(build_wine_to_recipe_prompt(wine, candidates, preferences))
         results = parse_wine_to_recipe_results(llm_response, top_k)
         if results:
-            source = "mongodb:recipes"
+            source = f"mongodb:recipes:llm-agent:{_recommendation_variant_suffix(preferences)}"
         else:
             results = _fallback_recipe_results(candidates, wine, top_k, profile)
-            source = "mongodb:recipes:fallback-empty"
+            source = f"mongodb:recipes:fallback-empty:{_recommendation_variant_suffix(preferences)}"
     except Exception:
         results = _fallback_recipe_results(candidates, wine, top_k, profile)
-        source = "mongodb:recipes:fallback"
+        source = f"mongodb:recipes:fallback:{_recommendation_variant_suffix(preferences)}"
 
     return {
         "mode": "wine_to_recipe",

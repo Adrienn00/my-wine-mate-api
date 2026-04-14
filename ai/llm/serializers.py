@@ -58,6 +58,104 @@ def serialize_wine_candidate(wine: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_wine_to_recipe_search_prompt(wine: dict[str, Any], preferences: dict | None) -> str:
+    wine_signals = extract_wine_signals(wine)
+    return json.dumps(
+        {
+            "task": "Act as a sommelier and decide what kinds of recipes should be retrieved for this wine.",
+            "constraints": [
+                "Return JSON only.",
+                "Do not rank candidates.",
+                "Think first about what dishes really fit the wine.",
+                "Then express that as recipe search filters and keywords.",
+                "Prefer broad but relevant retrieval so the final selector can choose from a larger set.",
+            ],
+            "wine": {
+                "id": str(wine["_id"]),
+                "name": wine.get("name"),
+                "type": wine.get("type"),
+                "style": wine.get("style"),
+                "foodPairingHints": wine.get("foodPairingHints", []),
+                "grapeVarieties": wine.get("grapeVarieties", []),
+                "flavorProfiles": wine.get("flavorProfiles", []),
+                "pairing_targets": wine_signals.get("pairing_targets", []),
+                "sweetness": wine_signals.get("sweetness"),
+                "body": wine_signals.get("body"),
+                "acidity": wine_signals.get("acidity"),
+                "tannin": wine_signals.get("tannin"),
+            },
+            "preferences": preferences,
+            "required_output": {
+                "search_terms": ["string"],
+                "must_have_categories": ["string"],
+                "should_have_ingredients": ["string"],
+                "exclude_terms": ["string"],
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def build_recipe_to_wine_search_prompt(recipe: dict[str, Any], preferences: dict | None) -> str:
+    recipe_signals = extract_recipe_signals(recipe)
+    return json.dumps(
+        {
+            "task": "Act as a sommelier and decide what kinds of wines should be retrieved for this recipe.",
+            "constraints": [
+                "Return JSON only.",
+                "Do not rank candidates.",
+                "Think first about what wines really fit the dish.",
+                "Then express that as wine search filters and keywords.",
+                "Prefer broad but relevant retrieval so the final selector can choose from a larger set.",
+            ],
+            "recipe": {
+                "id": str(recipe["_id"]),
+                "name": recipe.get("name"),
+                "categories": recipe.get("recipeCategories", []),
+                "ingredients": recipe.get("ingredients", []),
+                "hints": recipe.get("winePairingHints", []),
+                "main_ingredients": recipe_signals.get("main_ingredients", []),
+                "dish_types": recipe_signals.get("dish_types", []),
+                "meat_types": recipe_signals.get("meat_types", []),
+                "cooking_methods": recipe_signals.get("cooking_methods", []),
+                "textures": recipe_signals.get("textures", []),
+                "sauce_types": recipe_signals.get("sauce_types", []),
+                "spice_level": recipe_signals.get("spice_level"),
+                "sweetness": recipe_signals.get("sweetness"),
+            },
+            "preferences": preferences,
+            "required_output": {
+                "search_terms": ["string"],
+                "preferred_types": ["string"],
+                "preferred_styles": ["string"],
+                "preferred_flavors": ["string"],
+                "preferred_pairing_targets": ["string"],
+                "exclude_terms": ["string"],
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def parse_search_spec(llm_payload: dict[str, Any]) -> dict[str, list[str]]:
+    def _values(key: str) -> list[str]:
+        raw = llm_payload.get(key, [])
+        if not isinstance(raw, list):
+            raw = [raw] if raw else []
+        return [str(value).strip() for value in raw if str(value).strip()]
+
+    return {
+        "search_terms": _values("search_terms"),
+        "must_have_categories": _values("must_have_categories"),
+        "should_have_ingredients": _values("should_have_ingredients"),
+        "preferred_types": _values("preferred_types"),
+        "preferred_styles": _values("preferred_styles"),
+        "preferred_flavors": _values("preferred_flavors"),
+        "preferred_pairing_targets": _values("preferred_pairing_targets"),
+        "exclude_terms": _values("exclude_terms"),
+    }
+
+
 def build_recipe_to_wine_prompt(recipe: dict[str, Any], candidates: list[dict[str, Any]], preferences: dict | None) -> str:
     recipe_signals = extract_recipe_signals(recipe)
     return json.dumps(
@@ -66,6 +164,7 @@ def build_recipe_to_wine_prompt(recipe: dict[str, Any], candidates: list[dict[st
             "top_k": len(candidates),
             "preferences": preferences,
             "source": "Candidates were retrieved from the application's own MongoDB wines collection.",
+            "instruction": "Act as an expert sommelier. Choose the best wines for this recipe only from the provided candidates.",
             "recipe": {
                 "id": str(recipe["_id"]),
                 "name": recipe.get("name"),
@@ -107,6 +206,7 @@ def build_wine_to_recipe_prompt(wine: dict[str, Any], candidates: list[dict[str,
             "top_k": len(candidates),
             "preferences": preferences,
             "source": "Candidates were retrieved from the application's own MongoDB recipes collection.",
+            "instruction": "Act as an expert sommelier. Choose the best recipes for this wine only from the provided candidates.",
             "wine": {
                 "id": str(wine["_id"]),
                 "name": wine.get("name"),
@@ -171,4 +271,3 @@ def parse_wine_to_recipe_results(llm_payload: dict[str, Any], top_k: int) -> lis
             }
         )
     return results
-
