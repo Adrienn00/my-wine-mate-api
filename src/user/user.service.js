@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const User = require("./user.model.js");
 const bcrypt = require("bcrypt");
 const Wine = require("../wine/wine.model.js");
-const Recipe = require("../recipe/recipe.model.js"); // Ezt add hozzá a biztonság kedvéért
+const Recipe = require("../recipe/recipe.model.js");
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
@@ -22,7 +22,7 @@ function generateToken(user) {
 async function registerUser(userData) {
   const userExist = await User.findOne({ $or: [{ email: userData.email }, { username: userData.username }] });
   if (userExist) {
-    throw new Error("This username or email is already in used");
+    throw new Error("This username or email is already in use");
   }
   const saltRounds = 10;
   const hashedPassword = await bcrypt.hash(userData.password, saltRounds);
@@ -44,7 +44,7 @@ async function registerUser(userData) {
 }
 
 async function loginUser({ email, password }) {
-  // LOGIN-NÁL IS ÉRDEMES POPULATE-OT HASZNÁLNI, hogy az első belépéskor is jó legyen minden
+  // Populate favorites during login so the client receives the full data immediately.
   const user = await User.findOne({ email }).populate("favoriteWines").populate("favoriteRecipes");
 
   if (!user) {
@@ -61,13 +61,13 @@ async function loginUser({ email, password }) {
     username: user.username,
     email: user.email,
     isAdmin: user.isAdmin,
-    favoriteWines: user.favoriteWines, // Így rögtön megkapja a frontend
+    favoriteWines: user.favoriteWines,
     favoriteRecipes: user.favoriteRecipes,
     token,
   };
 }
 
-// EZT A FÜGGVÉNYT A CONTROLLERBŐL HIVOD, de a service-ben is legyen rendben:
+// Returns the authenticated user with populated favorites.
 async function getUser(userId) {
   const user = await User.findById(userId).populate("favoriteWines").populate("favoriteRecipes");
   if (!user) throw new Error("User not found");
@@ -97,14 +97,14 @@ async function getAllUsers() {
   return await User.find().select("-password");
 }
 
-// --- KEDVENC BOROK JAVÍTVA ---
+// Favorite wines
 async function addFavoriteWine(userId, wineId) {
   const user = await User.findById(userId);
   if (!user.favoriteWines.includes(wineId)) {
     user.favoriteWines.push(wineId);
     await user.save();
   }
-  // Visszaadjuk a TELJES listát kifejtve
+  // Return the fully populated favorites list.
   const updatedUser = await User.findById(userId).populate("favoriteWines");
   return updatedUser.favoriteWines;
 }
@@ -118,14 +118,14 @@ async function removeFavoriteWine(userId, wineId) {
   return updatedUser.favoriteWines;
 }
 
-// --- KEDVENC RECEPTEK JAVÍTVA ---
+// Favorite recipes
 async function addFavoriteRecipe(userId, recipeId) {
   const user = await User.findById(userId);
   if (!user.favoriteRecipes.includes(recipeId)) {
     user.favoriteRecipes.push(recipeId);
     await user.save();
   }
-  // Visszaadjuk a TELJES listát kifejtve (ÍGY LESZ NEVE A RECEPTNEK!)
+  // Return the fully populated favorites list.
   const updatedUser = await User.findById(userId).populate("favoriteRecipes");
   return updatedUser.favoriteRecipes;
 }
@@ -139,7 +139,7 @@ async function removeFavoriteRecipe(userId, recipeId) {
   return updatedUser.favoriteRecipes;
 }
 
-// JAVÍTVA: Az isAdmin paraméter hiányzott a függvényből
+// Updates a user's admin role.
 async function updateUserRole(userId, isAdmin) {
   const user = await User.findById(userId);
   if (!user) throw new Error("User not found");

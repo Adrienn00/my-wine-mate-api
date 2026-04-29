@@ -5,7 +5,14 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "node index.js"
+    "dev": "node index.js",
+    "ai:train": ".venv/bin/python ai/xgboost/train_pairing_model.py",
+    "ai:train-from-dataset": ".venv/bin/python ai/xgboost/train_pairing_model.py --use-existing-dataset",
+    "ai:recommend": ".venv/bin/python ai/xgboost/recommend_pairings.py",
+    "ai:autolabel": ".venv/bin/python ai/xgboost/generate_silver_labels.py",
+    "ai:seed-kb": ".venv/bin/python ai/xgboost/seed_pairing_knowledge.py",
+    "ai:pairing-dataset": ".venv/bin/python ai/xgboost/generate_pairing_dataset.py",
+    "ai:train-no-feedback": ".venv/bin/python ai/xgboost/train_pairing_model.py --no-include-feedback"
   },
   "keywords": [],
   "author": "",

@@ -4,7 +4,7 @@ async function getAllRecipes() {
   return await Recipe.find();
 }
 
-// EZT A FÜGGVÉNYT ADTUK HOZZÁ:
+// Returns a single recipe by its id.
 async function getRecipeById(id) {
   return await Recipe.findById(id);
 }
@@ -60,7 +60,7 @@ async function deleteRecipe(id) {
 
 module.exports = {
   getAllRecipes,
-  getRecipeById, // <--- NE FELEJTSD EL EXPORTÁLNI!
+  getRecipeById,
   addRecipe,
   updateRecipe,
   deleteRecipe,

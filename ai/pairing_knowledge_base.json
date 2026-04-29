@@ -1,0 +1,431 @@
+[
+  {
+    "name": "Red wines for red meat",
+    "description": "Structured reds pair well with beef and lamb dishes.",
+    "label": "good",
+    "confidence": "high",
+    "score": 5,
+    "criteria": {
+      "wineTypes": ["red"],
+      "meatTypes": ["beef", "lamb", "duck"]
+    },
+    "examples": {
+      "wines": ["Cabernet Sauvignon", "Syrah", "Merlot"],
+      "foods": ["grilled steak", "braised lamb", "duck breast"]
+    }
+  },
+  {
+    "name": "White wines for seafood",
+    "description": "Fresh white wines work well with fish and seafood.",
+    "label": "good",
+    "confidence": "high",
+    "score": 5,
+    "criteria": {
+      "wineTypes": ["white", "rose", "sparkling"],
+      "meatTypes": ["fish", "seafood"]
+    },
+    "examples": {
+      "wines": ["Sauvignon Blanc", "Pinot Grigio", "Cava"],
+      "foods": ["grilled salmon", "shrimp pasta", "mussels"]
+    }
+  },
+  {
+    "name": "Off-dry wines for spicy food",
+    "description": "A little sweetness helps balance spicy dishes.",
+    "label": "good",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "wineSweetness": ["sweet"],
+      "spiceLevels": ["high"]
+    },
+    "examples": {
+      "wines": ["Riesling", "Gewurztraminer"],
+      "foods": ["spicy curry", "chili noodles"]
+    }
+  },
+  {
+    "name": "Dessert wines with dessert",
+    "description": "Sweet desserts pair best with equally sweet wines.",
+    "label": "good",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "recipeCategories": ["dessert"],
+      "wineSweetness": ["sweet"]
+    },
+    "examples": {
+      "wines": ["Tokaji", "Sauternes", "Ice Wine"],
+      "foods": ["fruit tart", "cheesecake", "chocolate cake"]
+    }
+  },
+  {
+    "name": "Avoid tannic reds with seafood",
+    "description": "High-tannin reds often clash with delicate fish flavors.",
+    "label": "bad",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "wineTypes": ["red"],
+      "wineTannins": ["high"],
+      "meatTypes": ["fish", "seafood"]
+    },
+    "examples": {
+      "wines": ["young Cabernet Sauvignon", "Nebbiolo"],
+      "foods": ["grilled cod", "shrimp risotto"]
+    }
+  },
+  {
+    "name": "Avoid very dry wines with sweet desserts",
+    "description": "Dry wines can taste sour or bitter next to sweet desserts.",
+    "label": "bad",
+    "confidence": "medium",
+    "score": 3,
+    "criteria": {
+      "recipeCategories": ["dessert"],
+      "wineSweetness": ["dry"]
+    },
+    "examples": {
+      "wines": ["dry Sauvignon Blanc", "dry Cabernet"],
+      "foods": ["cake", "cookies", "sweet pastries"]
+    }
+  },
+  {
+    "name": "Sparkling wines for fried food",
+    "description": "Bubbles and acidity cut through fried and crispy foods.",
+    "label": "good",
+    "confidence": "high",
+    "score": 5,
+    "criteria": {
+      "wineTypes": ["sparkling"],
+      "cookingMethods": ["fried"],
+      "textures": ["crispy"]
+    },
+    "examples": {
+      "wines": ["Cava", "Champagne", "Prosecco"],
+      "foods": ["fried calamari", "egg rolls", "crispy chicken"]
+    }
+  },
+  {
+    "name": "High-acid whites for citrus seafood",
+    "description": "High-acid white wines pair especially well with seafood and citrus-driven dishes.",
+    "label": "good",
+    "confidence": "high",
+    "score": 5,
+    "criteria": {
+      "wineTypes": ["white"],
+      "wineAcidity": ["high"],
+      "meatTypes": ["fish", "seafood"],
+      "sauceTypes": ["citrus"]
+    },
+    "examples": {
+      "wines": ["Sauvignon Blanc", "Albarino", "Vermentino"],
+      "foods": ["lemon salmon", "lime shrimp", "grilled fish with citrus sauce"]
+    }
+  },
+  {
+    "name": "Cream sauces with fuller white wines",
+    "description": "Creamy sauces need wines with enough body to stand up to the richness.",
+    "label": "good",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "wineTypes": ["white"],
+      "wineBodies": ["medium", "full"],
+      "sauceTypes": ["cream"],
+      "textures": ["creamy"]
+    },
+    "examples": {
+      "wines": ["Chardonnay", "Viognier"],
+      "foods": ["alfredo pasta", "creamy chicken", "mushroom cream sauce"]
+    }
+  },
+  {
+    "name": "Tomato sauces with bright reds",
+    "description": "Tomato-based dishes work well with fresh reds that match the acidity.",
+    "label": "good",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "wineTypes": ["red"],
+      "wineAcidity": ["medium", "high"],
+      "sauceTypes": ["tomato"]
+    },
+    "examples": {
+      "wines": ["Sangiovese", "Barbera", "Chianti"],
+      "foods": ["marinara pasta", "lasagna", "pizza"]
+    }
+  },
+  {
+    "name": "Herbal dishes with Sauvignon Blanc",
+    "description": "Herb-driven dishes pair naturally with crisp herbal white wines.",
+    "label": "good",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "grapeVarieties": ["sauvignon blanc"],
+      "spices": ["herbs"],
+      "wineAcidity": ["high"]
+    },
+    "examples": {
+      "wines": ["Sauvignon Blanc"],
+      "foods": ["goat cheese salad", "herb chicken", "green herb pasta"]
+    }
+  },
+  {
+    "name": "Riesling for ginger and chili dishes",
+    "description": "Riesling is especially strong with aromatic spicy dishes that include ginger or chili.",
+    "label": "good",
+    "confidence": "high",
+    "score": 5,
+    "criteria": {
+      "grapeVarieties": ["riesling"],
+      "spices": ["ginger", "chili"]
+    },
+    "examples": {
+      "wines": ["Riesling"],
+      "foods": ["Thai curry", "ginger noodles", "spicy stir fry"]
+    }
+  },
+  {
+    "name": "Gewurztraminer for aromatic spice",
+    "description": "Highly aromatic spicy dishes pair well with floral off-dry whites.",
+    "label": "good",
+    "confidence": "medium",
+    "score": 4,
+    "criteria": {
+      "grapeVarieties": ["gewurztraminer"],
+      "spices": ["ginger", "cumin", "chili"],
+      "wineSweetness": ["sweet"]
+    },
+    "examples": {
+      "wines": ["Gewurztraminer"],
+      "foods": ["spiced curry", "Moroccan chicken", "aromatic noodles"]
+    }
+  },
+  {
+    "name": "Pinot Noir for earthy mushrooms",
+    "description": "Earthy mushroom dishes are a classic match for lighter earthy reds.",
+    "label": "good",
+    "confidence": "high",
+    "score": 5,
+    "criteria": {
+      "grapeVarieties": ["pinot noir"],
+      "mainIngredients": ["mushroom"]
+    },
+    "examples": {
+      "wines": ["Pinot Noir"],
+      "foods": ["mushroom risotto", "roasted mushrooms", "wild mushroom pasta"]
+    }
+  },
+  {
+    "name": "Syrah for peppery grilled meat",
+    "description": "Peppery grilled meat pairs well with spicy structured Syrah.",
+    "label": "good",
+    "confidence": "high",
+    "score": 5,
+    "criteria": {
+      "grapeVarieties": ["syrah", "shiraz"],
+      "meatTypes": ["beef", "lamb"],
+      "spices": ["pepper"],
+      "cookingMethods": ["grilled"]
+    },
+    "examples": {
+      "wines": ["Syrah", "Shiraz"],
+      "foods": ["pepper steak", "grilled lamb", "charred beef skewers"]
+    }
+  },
+  {
+    "name": "Rose for salads and light lunch dishes",
+    "description": "Rose works well with light dishes, salads, and mixed ingredient plates.",
+    "label": "good",
+    "confidence": "medium",
+    "score": 3,
+    "criteria": {
+      "wineTypes": ["rose"],
+      "recipeCategories": ["salad", "vegetarian"]
+    },
+    "examples": {
+      "wines": ["Dry Rose", "Provence Rose"],
+      "foods": ["summer salad", "vegetable tart", "light lunch plate"]
+    }
+  },
+  {
+    "name": "Goat cheese with Sauvignon Blanc",
+    "description": "Fresh goat cheese and Sauvignon Blanc are a classic high-acid pairing.",
+    "label": "good",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "grapeVarieties": ["sauvignon blanc"],
+      "mainIngredients": ["cheese"],
+      "recipeCategories": ["salad", "vegetarian"]
+    },
+    "examples": {
+      "wines": ["Sauvignon Blanc"],
+      "foods": ["goat cheese salad", "goat cheese tart"]
+    }
+  },
+  {
+    "name": "Sparkling wines for salty snacks",
+    "description": "Sparkling wines refresh the palate with salty, crunchy appetizers.",
+    "label": "good",
+    "confidence": "medium",
+    "score": 4,
+    "criteria": {
+      "wineTypes": ["sparkling"],
+      "textures": ["crispy", "light"]
+    },
+    "examples": {
+      "wines": ["Cava", "Prosecco"],
+      "foods": ["chips", "crispy appetizers", "fried snacks"]
+    }
+  },
+  {
+    "name": "Avoid sweet reds with savory fried foods",
+    "description": "Sweet red wines are usually a poor fit for savory fried snacks and finger food.",
+    "label": "bad",
+    "confidence": "high",
+    "score": 5,
+    "criteria": {
+      "wineTypes": ["red"],
+      "wineSweetness": ["sweet"],
+      "cookingMethods": ["fried"],
+      "foodSweetness": ["savory"]
+    },
+    "examples": {
+      "wines": ["sweet red blend"],
+      "foods": ["egg rolls", "fried chicken bites", "savory croquettes"]
+    }
+  },
+  {
+    "name": "Avoid heavy reds with salad",
+    "description": "Full structured reds often dominate fresh salad-style dishes.",
+    "label": "bad",
+    "confidence": "medium",
+    "score": 3,
+    "criteria": {
+      "wineTypes": ["red"],
+      "wineBodies": ["full"],
+      "recipeCategories": ["salad"]
+    },
+    "examples": {
+      "wines": ["full-bodied Cabernet", "big Shiraz"],
+      "foods": ["green salad", "vegetable salad", "fresh lunch salad"]
+    }
+  },
+  {
+    "name": "Avoid oaky full whites with delicate fish",
+    "description": "Overly rich oaky whites can overwhelm delicate fish preparations.",
+    "label": "bad",
+    "confidence": "medium",
+    "score": 3,
+    "criteria": {
+      "wineTypes": ["white"],
+      "wineBodies": ["full"],
+      "meatTypes": ["fish"],
+      "textures": ["light"]
+    },
+    "examples": {
+      "wines": ["heavily oaked Chardonnay"],
+      "foods": ["poached white fish", "light cod dishes"]
+    }
+  },
+  {
+    "name": "Avoid high alcohol wines with spicy dishes",
+    "description": "High alcohol can intensify the heat in spicy food.",
+    "label": "bad",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "wineAlcoholBuckets": ["high"],
+      "spiceLevels": ["high"]
+    },
+    "examples": {
+      "wines": ["high alcohol red", "powerful Shiraz"],
+      "foods": ["chili curry", "hot stir fry", "spicy noodles"]
+    }
+  },
+  {
+    "name": "Avoid tannic reds with creamy cheese dishes",
+    "description": "Firm tannins can turn harsh with soft creamy cheese textures.",
+    "label": "bad",
+    "confidence": "medium",
+    "score": 3,
+    "criteria": {
+      "wineTypes": ["red"],
+      "wineTannins": ["high"],
+      "mainIngredients": ["cheese"],
+      "textures": ["creamy"]
+    },
+    "examples": {
+      "wines": ["young Cabernet Sauvignon", "young Nebbiolo"],
+      "foods": ["cheese pasta", "creamy cheese tart", "soft cheese dishes"]
+    }
+  },
+  {
+    "name": "Pinot Grigio for light vegetable dishes",
+    "description": "Simple crisp vegetable dishes pair well with clean light whites.",
+    "label": "good",
+    "confidence": "medium",
+    "score": 3,
+    "criteria": {
+      "grapeVarieties": ["pinot grigio", "pinot gris"],
+      "recipeCategories": ["vegetarian"],
+      "textures": ["light"]
+    },
+    "examples": {
+      "wines": ["Pinot Grigio"],
+      "foods": ["vegetable pasta", "light vegetable plate", "summer vegetables"]
+    }
+  },
+  {
+    "name": "Chardonnay for roast chicken",
+    "description": "Medium to full-bodied Chardonnay is reliable with roast chicken and buttery poultry dishes.",
+    "label": "good",
+    "confidence": "high",
+    "score": 4,
+    "criteria": {
+      "grapeVarieties": ["chardonnay"],
+      "meatTypes": ["chicken", "turkey"],
+      "cookingMethods": ["roasted"],
+      "wineBodies": ["medium", "full"]
+    },
+    "examples": {
+      "wines": ["Chardonnay"],
+      "foods": ["roast chicken", "turkey roast", "buttery poultry dishes"]
+    }
+  },
+  {
+    "name": "Merlot for medium-rich beef dishes",
+    "description": "Merlot works well with softer beef dishes that are rich but not too aggressive.",
+    "label": "good",
+    "confidence": "medium",
+    "score": 4,
+    "criteria": {
+      "grapeVarieties": ["merlot"],
+      "meatTypes": ["beef"],
+      "wineBodies": ["medium", "full"]
+    },
+    "examples": {
+      "wines": ["Merlot"],
+      "foods": ["beef stew", "braised beef", "beef pie"]
+    }
+  },
+  {
+    "name": "Avoid sparkling wine with very rich red meat stews",
+    "description": "Light sparkling styles can feel too thin for dense red meat stews.",
+    "label": "bad",
+    "confidence": "medium",
+    "score": 3,
+    "criteria": {
+      "wineTypes": ["sparkling"],
+      "meatTypes": ["beef", "lamb"],
+      "textures": ["rich"]
+    },
+    "examples": {
+      "wines": ["light sparkling wine"],
+      "foods": ["beef stew", "rich lamb stew"]
+    }
+  }
+]

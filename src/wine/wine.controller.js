@@ -11,6 +11,18 @@ async function getWines(req, res) {
   }
 }
 
+async function getWineById(req, res) {
+  try {
+    const wine = await wineService.getWineById(req.params.id);
+    if (!wine) {
+      return res.status(404).json({ message: "Wine Not Found" });
+    }
+    return res.status(200).json(wine);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
 async function addWine(req, res) {
   try {
     const wineData = {
@@ -42,7 +54,7 @@ async function newRating(req, res) {
     const hasComment = String(latestRating?.comment || "").trim().length > 0;
 
     if (hasComment) {
-      const commenter = latestRating?.userName || req.user?.email || "Egy felhasználó";
+      const commenter = latestRating?.userName || req.user?.email || "A user";
       const admins = await User.find({
         isAdmin: true,
         _id: { $ne: req.user?.id },
@@ -51,7 +63,7 @@ async function newRating(req, res) {
       await Promise.all(
         admins.map(async (admin) => {
           admin.notifications.push({
-            message: `Új hozzászólás érkezett a "${updateRatings.name}" borhoz (${commenter}).`,
+            message: `A new comment was added to the wine "${updateRatings.name}" by ${commenter}.`,
             type: "moderation",
             link: `/wine/${updateRatings._id}`,
           });
@@ -171,6 +183,7 @@ async function deleteWine(req, res) {
 
 module.exports = {
   getWines,
+  getWineById,
   addWine,
   updateWine,
   deleteWine,
