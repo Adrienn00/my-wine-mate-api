@@ -26,3 +26,10 @@ GET /api/pairings/recommend?recipeId=<recipeId>&topK=5
 GET /api/pairings/recommend?recipeId=<recipeId>&topK=5&engine=llm
 GET /api/pairings/recommend?recipeId=<recipeId>&topK=5&engine=xgboost
 ```
+
+## Feedback learning notes
+
+- `POST /api/pairings/feedback` stores `good` / `bad` pairing feedback in MongoDB.
+- `npm run ai:train` now rebuilds the XGBoost training dataset from MongoDB by default, so the newest feedback rows are included in retraining.
+- `npm run ai:train-from-dataset` keeps the old behavior and trains from the exported CSV artifacts.
+- The LLM pairing pipeline now uses saved feedback as a soft learning signal when reranking candidates and when constructing the final ranking prompt.

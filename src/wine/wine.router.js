@@ -12,6 +12,7 @@ router.delete("/:id/rating/:ratingId", authMiddleware, adminMiddleware, wineCont
 router.get("/:id/live-offers", authMiddleware, wineController.getLiveOffers);
 
 router.get("/", wineController.getWines);
+router.get("/:id", wineController.getWineById);
 
 router.post("/", authMiddleware, wineController.addWine);
 

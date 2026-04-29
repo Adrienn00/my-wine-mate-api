@@ -11,6 +11,18 @@ async function getWines(req, res) {
   }
 }
 
+async function getWineById(req, res) {
+  try {
+    const wine = await wineService.getWineById(req.params.id);
+    if (!wine) {
+      return res.status(404).json({ message: "Wine Not Found" });
+    }
+    return res.status(200).json(wine);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
 async function addWine(req, res) {
   try {
     const wineData = {
@@ -171,6 +183,7 @@ async function deleteWine(req, res) {
 
 module.exports = {
   getWines,
+  getWineById,
   addWine,
   updateWine,
   deleteWine,

@@ -81,7 +81,7 @@ def feedback_collection(db):
 
 def fetch_feedback_rows(db, valid_recipe_ids: set[str], valid_wine_ids: set[str]) -> list[dict]:
     rows = []
-    cursor = feedback_collection(db).find()
+    cursor = feedback_collection(db).find({"status": "approved"})
 
     for entry in cursor:
         recipe_id = str(entry.get("recipeId") or "")

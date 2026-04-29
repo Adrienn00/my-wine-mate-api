@@ -35,11 +35,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--use-existing-dataset",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Train from the existing dataset CSV when available instead of rebuilding it from MongoDB.",
     )
     parser.add_argument("--limit-wines", type=int, default=600)
     parser.add_argument("--limit-recipes", type=int, default=300)
+    parser.add_argument(
+        "--include-feedback",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include saved pairing feedback when rebuilding the training dataset from MongoDB.",
+    )
+    parser.add_argument(
+        "--include-heuristics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include heuristic bootstrap rows when rebuilding the training dataset from MongoDB.",
+    )
     parser.add_argument("--random-seed", type=int, default=42)
     parser.add_argument(
         "--output-dir",
@@ -114,7 +126,12 @@ def main() -> None:
         df, source_metadata = load_existing_dataset(args.input_csv)
     else:
         print("Building dataset from MongoDB...", flush=True)
-        df, source_metadata = build_dataset(args.limit_wines, args.limit_recipes)
+        df, source_metadata = build_dataset(
+            args.limit_wines,
+            args.limit_recipes,
+            include_feedback=args.include_feedback,
+            include_heuristics=args.include_heuristics,
+        )
     print(
         "Dataset ready -> "
         f"rows: {len(df)}, "
@@ -144,8 +161,7 @@ def main() -> None:
             "feedback_direction",
             "feedback_user_id",
             "feedback_created_at",
-        ]
-        ,
+        ],
         errors="ignore",
     ).to_dict("records")
 

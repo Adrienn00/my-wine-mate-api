@@ -1,5 +1,6 @@
 const PairingRule = require("./pairing.model");
 const PairingFeedback = require("./pairingFeedback.model");
+const PairingTrainingRun = require("./pairingTrainingRun.model");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 const fs = require("fs");
@@ -10,14 +11,49 @@ const execFileAsync = promisify(execFile);
 const BACKEND_ROOT = path.resolve(__dirname, "../..");
 const AI_SCRIPT_PATH = path.join(BACKEND_ROOT, "ai", "xgboost", "recommend_pairings.py");
 const LLM_SCRIPT_PATH = path.join(BACKEND_ROOT, "ai", "llm", "llm_recommend_pairings.py");
+const TRAIN_SCRIPT_PATH = path.join(BACKEND_ROOT, "ai", "xgboost", "train_pairing_model.py");
 const VENV_PYTHON_PATH = path.join(BACKEND_ROOT, ".venv", "bin", "python");
 const MODEL_PATH = path.join(BACKEND_ROOT, "ai", "artifacts", "xgboost_pairing_model.joblib");
+function nowMs() {
+  return Date.now();
+}
+const TRAINING_METRICS_PATH = path.join(BACKEND_ROOT, "ai", "artifacts", "training_metrics.json");
 
 function resolvePythonExecutable() {
   if (fs.existsSync(VENV_PYTHON_PATH)) {
     return VENV_PYTHON_PATH;
   }
   return "python3";
+}
+
+function approvedFeedbackFilter() {
+  return { status: "approved" };
+}
+
+function pendingFeedbackFilter() {
+  return {
+    $or: [{ status: "pending" }, { status: { $exists: false } }, { status: null }],
+  };
+}
+
+function serializeTrainingRun(run) {
+  if (!run) return null;
+
+  return {
+    _id: run._id,
+    status: run.status,
+    triggerSource: run.triggerSource,
+    triggeredBy: run.triggeredBy,
+    approvedFeedbackCount: run.approvedFeedbackCount || 0,
+    pendingFeedbackCount: run.pendingFeedbackCount || 0,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    metrics: run.metrics || null,
+    stdoutTail: String(run.stdout || "").split("\n").slice(-8).join("\n").trim(),
+    stderrTail: String(run.stderr || "").split("\n").slice(-8).join("\n").trim(),
+  };
 }
 
 async function getAllPairingRules() {
@@ -72,7 +108,53 @@ function normalizeEngine(engine) {
 function isLlmConfigured() {
   return Boolean(String(process.env.GROQ_API_KEY || "").trim());
 }
+
+function recommendationMetadata(engine, source = "") {
+  const normalizedEngine = String(engine || "").toLowerCase();
+  const normalizedSource = String(source || "").toLowerCase();
+
+  if (normalizedEngine === "xgboost") {
+    return {
+      recommendationEngine: "xgboost",
+      recommendationLabel: "XGBoost recommendation",
+      recommendationSource: "xgboost-model",
+    };
+  }
+
+  if (normalizedEngine === "llm") {
+    return {
+      recommendationEngine: normalizedSource.includes("fallback") ? "llm-fallback" : "llm-mcp",
+      recommendationLabel: "AI recommendation",
+      recommendationSource: source || "llm-mcp",
+    };
+  }
+
+  return {
+    recommendationEngine: "smart",
+    recommendationLabel: "Smart recommendation",
+    recommendationSource: source || "local-scoring",
+  };
+}
+
+function attachRecommendationMetadata(payload, engine) {
+  const metadata = recommendationMetadata(engine, payload?.source);
+  const results = Array.isArray(payload?.results)
+    ? payload.results.map((item) => ({
+        ...item,
+        ...metadata,
+      }))
+    : [];
+
+  return {
+    ...payload,
+    ...metadata,
+    engine,
+    results,
+  };
+}
+
 async function getXgboostRecommendations({ recipeId, wineId, topK = 5 }) {
+  const startedAt = nowMs();
   if (Boolean(recipeId) === Boolean(wineId)) {
     throw new Error("Pass exactly one of recipeId or wineId.");
   }
@@ -90,10 +172,12 @@ async function getXgboostRecommendations({ recipeId, wineId, topK = 5 }) {
     args.push("--wine-id", String(wineId));
   }
 
+  const pythonStartedAt = nowMs();
   const { stdout, stderr } = await execFileAsync(pythonExecutable, args, {
     cwd: BACKEND_ROOT,
     timeout: 120000,
   });
+  const pythonDurationMs = nowMs() - pythonStartedAt;
 
   const rawOutput = String(stdout || "").trim();
   if (!rawOutput) {
@@ -101,10 +185,14 @@ async function getXgboostRecommendations({ recipeId, wineId, topK = 5 }) {
   }
 
   const parsed = JSON.parse(rawOutput);
-  return {
-    ...parsed,
-    engine: "xgboost",
+  const response = attachRecommendationMetadata(parsed, "xgboost");
+  response.timings = {
+    ...(parsed?.timings || {}),
+    python_exec_ms: pythonDurationMs,
+    total_backend_ms: nowMs() - startedAt,
   };
+  console.log("[pairings:xgboost:timings]", JSON.stringify(response.timings));
+  return response;
 }
 
 async function getLlmRecommendations({
@@ -115,6 +203,7 @@ async function getLlmRecommendations({
   userId = null,
   usePreferences = false,
 }) {
+  const startedAt = nowMs();
   if (Boolean(recipeId) === Boolean(wineId)) {
     throw new Error("Pass exactly one of recipeId or wineId.");
   }
@@ -136,10 +225,12 @@ async function getLlmRecommendations({
     args.push("--use-preferences", "--user-id", String(userId));
   }
 
+  const pythonStartedAt = nowMs();
   const { stdout, stderr } = await execFileAsync(pythonExecutable, args, {
     cwd: BACKEND_ROOT,
     timeout: 120000,
   });
+  const pythonDurationMs = nowMs() - pythonStartedAt;
 
   const rawOutput = String(stdout || "").trim();
   if (!rawOutput) {
@@ -147,10 +238,14 @@ async function getLlmRecommendations({
   }
 
   const parsed = JSON.parse(rawOutput);
-  return {
-    ...parsed,
-    engine: "llm",
+  const response = attachRecommendationMetadata(parsed, "llm");
+  response.timings = {
+    ...(parsed?.timings || {}),
+    python_exec_ms: pythonDurationMs,
+    total_backend_ms: nowMs() - startedAt,
   };
+  console.log("[pairings:llm:timings]", JSON.stringify(response.timings));
+  return response;
 }
 
 async function getAiRecommendationsByEngine({
@@ -172,10 +267,14 @@ async function getAiRecommendationsByEngine({
   }
 
   if (isLlmConfigured()) {
-    return getLlmRecommendations({ recipeId, wineId, topK, userId, usePreferences });
+    try {
+      return await getLlmRecommendations({ recipeId, wineId, topK, userId, usePreferences });
+    } catch (error) {
+      console.warn("LLM pairing recommendation failed, falling back to XGBoost:", error.message);
+    }
   }
 
-  throw new Error("LLM recommender is not configured. Set GROQ_API_KEY to enable recommendations.");
+  return getXgboostRecommendations({ recipeId, wineId, topK });
 }
 
 function buildRecommendationTabs(results = [], perTab = 3) {
@@ -263,6 +362,9 @@ async function savePairingFeedback({
       recommendationScore === null || recommendationScore === undefined
         ? null
         : Number(recommendationScore),
+    status: "pending",
+    reviewedBy: null,
+    reviewedAt: null,
   };
 
   if (userId && mongoose.Types.ObjectId.isValid(userId)) {
@@ -291,6 +393,150 @@ async function savePairingFeedback({
   return feedbackEntry;
 }
 
+async function getPairingFeedbackList({ status = "all", limit = 50 } = {}) {
+  const parsedLimit = Math.min(Math.max(Number(limit) || 50, 1), 250);
+  const query = {};
+
+  if (status === "pending") {
+    query.$or = pendingFeedbackFilter().$or;
+  } else if (["approved", "rejected"].includes(status)) {
+    query.status = status;
+  }
+
+  return await PairingFeedback.find(query)
+    .sort({ createdAt: -1 })
+    .limit(parsedLimit)
+    .populate("userId", "username email")
+    .populate("reviewedBy", "username email");
+}
+
+async function updatePairingFeedbackStatus(id, { status, reviewedBy = null } = {}) {
+  if (!["approved", "rejected", "pending"].includes(status)) {
+    throw new Error("Invalid feedback review status.");
+  }
+
+  const feedback = await PairingFeedback.findById(id);
+  if (!feedback) {
+    throw new Error("Pairing feedback not found.");
+  }
+
+  feedback.status = status;
+  feedback.reviewedBy = reviewedBy && mongoose.Types.ObjectId.isValid(reviewedBy) ? reviewedBy : null;
+  feedback.reviewedAt = status === "pending" ? null : new Date();
+  await feedback.save();
+
+  return await PairingFeedback.findById(feedback._id)
+    .populate("userId", "username email")
+    .populate("reviewedBy", "username email");
+}
+
+async function approvePendingPairingFeedback(reviewedBy = null) {
+  const reviewPayload = {
+    status: "approved",
+    reviewedAt: new Date(),
+    reviewedBy: reviewedBy && mongoose.Types.ObjectId.isValid(reviewedBy) ? reviewedBy : null,
+  };
+
+  const result = await PairingFeedback.updateMany(pendingFeedbackFilter(), reviewPayload);
+  return {
+    matchedCount: result.matchedCount || 0,
+    modifiedCount: result.modifiedCount || 0,
+  };
+}
+
+async function getPairingTrainingSummary() {
+  const [totalFeedback, pendingFeedback, approvedFeedback, rejectedFeedback, approvedGood, approvedBad, lastRun] =
+    await Promise.all([
+      PairingFeedback.countDocuments(),
+      PairingFeedback.countDocuments(pendingFeedbackFilter()),
+      PairingFeedback.countDocuments(approvedFeedbackFilter()),
+      PairingFeedback.countDocuments({ status: "rejected" }),
+      PairingFeedback.countDocuments({ ...approvedFeedbackFilter(), feedback: "good" }),
+      PairingFeedback.countDocuments({ ...approvedFeedbackFilter(), feedback: "bad" }),
+      PairingTrainingRun.findOne().sort({ createdAt: -1 }).populate("triggeredBy", "username email"),
+    ]);
+
+  const lastCompletedAt = lastRun?.completedAt ? new Date(lastRun.completedAt) : null;
+  const approvedSinceLastTraining = lastCompletedAt
+    ? await PairingFeedback.countDocuments({
+        ...approvedFeedbackFilter(),
+        updatedAt: { $gt: lastCompletedAt },
+      })
+    : approvedFeedback;
+
+  return {
+    feedback: {
+      total: totalFeedback,
+      pending: pendingFeedback,
+      approved: approvedFeedback,
+      rejected: rejectedFeedback,
+      approvedGood,
+      approvedBad,
+    },
+    training: {
+      recommendedToRetrain: approvedSinceLastTraining > 0,
+      approvedSinceLastTraining,
+      lastRun: serializeTrainingRun(lastRun),
+      modelExists: fs.existsSync(MODEL_PATH),
+      metricsExists: fs.existsSync(TRAINING_METRICS_PATH),
+    },
+  };
+}
+
+async function trainPairingModel({ triggeredBy = null } = {}) {
+  const [approvedFeedbackCount, pendingFeedbackCount] = await Promise.all([
+    PairingFeedback.countDocuments(approvedFeedbackFilter()),
+    PairingFeedback.countDocuments(pendingFeedbackFilter()),
+  ]);
+
+  const trainingRun = await PairingTrainingRun.create({
+    status: "running",
+    triggerSource: "admin",
+    triggeredBy: triggeredBy && mongoose.Types.ObjectId.isValid(triggeredBy) ? triggeredBy : null,
+    approvedFeedbackCount,
+    pendingFeedbackCount,
+    startedAt: new Date(),
+  });
+
+  const pythonExecutable = resolvePythonExecutable();
+  const args = [TRAIN_SCRIPT_PATH, "--include-feedback"];
+
+  try {
+    const { stdout, stderr } = await execFileAsync(pythonExecutable, args, {
+      cwd: BACKEND_ROOT,
+      timeout: 600000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+
+    let metrics = null;
+    if (fs.existsSync(TRAINING_METRICS_PATH)) {
+      try {
+        metrics = JSON.parse(fs.readFileSync(TRAINING_METRICS_PATH, "utf-8"));
+      } catch {
+        metrics = null;
+      }
+    }
+
+    trainingRun.status = "completed";
+    trainingRun.stdout = String(stdout || "");
+    trainingRun.stderr = String(stderr || "");
+    trainingRun.metrics = metrics;
+    trainingRun.completedAt = new Date();
+    await trainingRun.save();
+
+    return serializeTrainingRun(
+      await PairingTrainingRun.findById(trainingRun._id).populate("triggeredBy", "username email")
+    );
+  } catch (error) {
+    trainingRun.status = "failed";
+    trainingRun.stdout = String(error.stdout || "");
+    trainingRun.stderr = String(error.stderr || error.message || "");
+    trainingRun.completedAt = new Date();
+    await trainingRun.save();
+    throw new Error(trainingRun.stderr || "Training failed.");
+  }
+}
+
 module.exports = {
   getAllPairingRules,
   getActivePairingRules,
@@ -301,4 +547,9 @@ module.exports = {
   getAiRecommendationsByEngine,
   getRecommendationTabs,
   savePairingFeedback,
+  getPairingFeedbackList,
+  updatePairingFeedbackStatus,
+  approvePendingPairingFeedback,
+  getPairingTrainingSummary,
+  trainPairingModel,
 };

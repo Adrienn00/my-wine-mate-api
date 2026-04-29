@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import sys
+import time
 from pathlib import Path
 
 import joblib
@@ -212,22 +213,32 @@ def recommend_for_wine(wine_id: str, top_k: int, model) -> list[dict]:
 
 
 def main() -> None:
+    started_at = time.perf_counter()
     args = parse_args()
     if bool(args.recipe_id) == bool(args.wine_id):
         raise RuntimeError("Pass exactly one of --recipe-id or --wine-id.")
 
+    model_started_at = time.perf_counter()
     model = load_model(args.model_path)
+    model_load_ms = round((time.perf_counter() - model_started_at) * 1000, 2)
 
     if args.recipe_id:
+        inference_started_at = time.perf_counter()
         results = {
             "mode": "recipe_to_wine",
             "results": recommend_for_recipe(args.recipe_id, args.top_k, model),
         }
     else:
+        inference_started_at = time.perf_counter()
         results = {
             "mode": "wine_to_recipe",
             "results": recommend_for_wine(args.wine_id, args.top_k, model),
         }
+    results["timings"] = {
+        "model_load_ms": model_load_ms,
+        "inference_ms": round((time.perf_counter() - inference_started_at) * 1000, 2),
+        "total_python_ms": round((time.perf_counter() - started_at) * 1000, 2),
+    }
 
     print(json.dumps(sanitize_json_value(results), indent=2, allow_nan=False))
 

@@ -116,6 +116,8 @@ The pairing module handles:
 - pairing rule storage
 - AI recommendation requests
 - pairing feedback storage
+- pairing feedback review workflow
+- admin-triggered model retraining
 - communication between the backend and the Python AI scripts
 
 Main files:
@@ -141,6 +143,7 @@ The pairing-related collections are especially important for the AI system:
 
 - `pairingrules` stores structured expert knowledge
 - `pairingfeedbacks` stores user feedback on generated recommendations
+- `pairingtrainingruns` stores admin-triggered retraining history and outcomes
 
 ## AI Pairing Module
 
@@ -195,9 +198,9 @@ The current training dataset is built from:
 
 - expert pairing rules in `pairingrules`
 - high-confidence heuristic bootstrap labels for uncovered pairs
-- saved user feedback in `pairingfeedbacks`
+- admin-approved user feedback in `pairingfeedbacks`
 
-If feedback exists for the same wine-recipe pair, it can override the rule-based label during dataset generation.
+If approved feedback exists for the same wine-recipe pair, it can override the rule-based label during dataset generation.
 
 ### AI pairing outputs
 
@@ -225,6 +228,11 @@ Important pairing-related endpoints:
 
 - `GET /api/pairings/recommend`
 - `POST /api/pairings/feedback`
+- `GET /api/pairings/admin/feedback`
+- `PUT /api/pairings/admin/feedback/:id/status`
+- `POST /api/pairings/admin/feedback/approve-pending`
+- `GET /api/pairings/admin/training-summary`
+- `POST /api/pairings/admin/train`
 
 Important wine recommendation endpoint:
 
@@ -241,6 +249,7 @@ The current recommendation flow is:
 5. the recommender returns ranked results
 6. the frontend displays recommendations
 7. the user can submit `Good match` or `Bad match` feedback
+8. admin users can review feedback, approve it for learning, then trigger retraining
 
 ## Recent Development Notes
 
@@ -251,6 +260,11 @@ Current notable implementation state:
 - backend food pairing now uses the Python AI recommender instead of frontend-only weighted scoring
 - a dedicated pairing module exists in the backend
 - pairing feedback is now stored through `POST /api/pairings/feedback`
+- pairing feedback entries now support `pending`, `approved`, and `rejected` review states
+- a new admin review flow was added so feedback can be approved before it is used for learning
+- the XGBoost retraining flow now rebuilds its dataset from MongoDB by default, so the newest approved feedback can be learned without relying on stale CSV exports
+- the LLM pairing pipeline now uses approved feedback as a soft ranking signal when preparing candidate lists and building the final prompt
+- an admin-triggered retraining flow now exists through pairing admin endpoints and training runs are recorded in `pairingtrainingruns`
 - the training dataset generator can merge user feedback into the labeled training data
 - the training dataset generator can also add high-confidence heuristic positive and negative pairs to create a richer training set
 - the pairing knowledge base includes both positive and negative rules

@@ -21,9 +21,22 @@ def safe_float(value: Any, fallback: float = 0.0) -> float:
         return fallback
 
 
-def serialize_recipe_candidate(recipe: dict[str, Any]) -> dict[str, Any]:
-    signals = extract_recipe_signals(recipe)
+def _serialize_feedback_stats(feedback_stats: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not feedback_stats or not feedback_stats.get("total"):
+        return None
+
     return {
+        "good": int(feedback_stats.get("good") or 0),
+        "bad": int(feedback_stats.get("bad") or 0),
+        "total": int(feedback_stats.get("total") or 0),
+        "positive_ratio": safe_float(feedback_stats.get("positive_ratio"), 0.0),
+        "avg_recommendation_score": feedback_stats.get("avg_recommendation_score"),
+    }
+
+
+def serialize_recipe_candidate(recipe: dict[str, Any], feedback_stats: dict[str, Any] | None = None) -> dict[str, Any]:
+    signals = extract_recipe_signals(recipe)
+    serialized = {
         "recipe_id": str(recipe["_id"]),
         "recipe_name": recipe.get("name"),
         "categories": recipe.get("recipeCategories", []),
@@ -38,11 +51,15 @@ def serialize_recipe_candidate(recipe: dict[str, Any]) -> dict[str, Any]:
         "sweetness": signals.get("sweetness"),
         "winePairingHints": recipe.get("winePairingHints", []),
     }
+    feedback = _serialize_feedback_stats(feedback_stats)
+    if feedback:
+        serialized["feedback"] = feedback
+    return serialized
 
 
-def serialize_wine_candidate(wine: dict[str, Any]) -> dict[str, Any]:
+def serialize_wine_candidate(wine: dict[str, Any], feedback_stats: dict[str, Any] | None = None) -> dict[str, Any]:
     signals = extract_wine_signals(wine)
-    return {
+    serialized = {
         "wine_id": str(wine["_id"]),
         "wine_name": wine.get("name"),
         "type": wine.get("type"),
@@ -56,6 +73,10 @@ def serialize_wine_candidate(wine: dict[str, Any]) -> dict[str, Any]:
         "tannin": signals.get("tannin"),
         "pairing_targets": signals.get("pairing_targets", []),
     }
+    feedback = _serialize_feedback_stats(feedback_stats)
+    if feedback:
+        serialized["feedback"] = feedback
+    return serialized
 
 
 def build_wine_to_recipe_search_prompt(wine: dict[str, Any], preferences: dict | None) -> str:
@@ -156,8 +177,14 @@ def parse_search_spec(llm_payload: dict[str, Any]) -> dict[str, list[str]]:
     }
 
 
-def build_recipe_to_wine_prompt(recipe: dict[str, Any], candidates: list[dict[str, Any]], preferences: dict | None) -> str:
+def build_recipe_to_wine_prompt(
+    recipe: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    preferences: dict | None,
+    feedback_lookup: dict[str, dict[str, Any]] | None = None,
+) -> str:
     recipe_signals = extract_recipe_signals(recipe)
+    feedback_lookup = feedback_lookup or {}
     return json.dumps(
         {
             "mode": "recipe_to_wine",
@@ -165,6 +192,11 @@ def build_recipe_to_wine_prompt(recipe: dict[str, Any], candidates: list[dict[st
             "preferences": preferences,
             "source": "Candidates were retrieved from the application's own MongoDB wines collection.",
             "instruction": "Act as an expert sommelier. Choose the best wines for this recipe only from the provided candidates.",
+            "constraints": [
+                "Only return items from the candidate list.",
+                "Treat candidate feedback as a soft but meaningful learning signal from prior users.",
+                "Consistently negative feedback should push a candidate down unless the pairing logic is clearly stronger.",
+            ],
             "recipe": {
                 "id": str(recipe["_id"]),
                 "name": recipe.get("name"),
@@ -180,7 +212,10 @@ def build_recipe_to_wine_prompt(recipe: dict[str, Any], candidates: list[dict[st
                 "spice_level": recipe_signals.get("spice_level"),
                 "sweetness": recipe_signals.get("sweetness"),
             },
-            "candidates": [serialize_wine_candidate(wine) for wine in candidates],
+            "candidates": [
+                serialize_wine_candidate(wine, feedback_lookup.get(str(wine.get("_id"))))
+                for wine in candidates
+            ],
             "required_output": {
                 "results": [
                     {
@@ -198,8 +233,14 @@ def build_recipe_to_wine_prompt(recipe: dict[str, Any], candidates: list[dict[st
     )
 
 
-def build_wine_to_recipe_prompt(wine: dict[str, Any], candidates: list[dict[str, Any]], preferences: dict | None) -> str:
+def build_wine_to_recipe_prompt(
+    wine: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    preferences: dict | None,
+    feedback_lookup: dict[str, dict[str, Any]] | None = None,
+) -> str:
     wine_signals = extract_wine_signals(wine)
+    feedback_lookup = feedback_lookup or {}
     return json.dumps(
         {
             "mode": "wine_to_recipe",
@@ -207,6 +248,11 @@ def build_wine_to_recipe_prompt(wine: dict[str, Any], candidates: list[dict[str,
             "preferences": preferences,
             "source": "Candidates were retrieved from the application's own MongoDB recipes collection.",
             "instruction": "Act as an expert sommelier. Choose the best recipes for this wine only from the provided candidates.",
+            "constraints": [
+                "Only return items from the candidate list.",
+                "Treat candidate feedback as a soft but meaningful learning signal from prior users.",
+                "Consistently negative feedback should push a candidate down unless the pairing logic is clearly stronger.",
+            ],
             "wine": {
                 "id": str(wine["_id"]),
                 "name": wine.get("name"),
@@ -221,7 +267,10 @@ def build_wine_to_recipe_prompt(wine: dict[str, Any], candidates: list[dict[str,
                 "acidity": wine_signals.get("acidity"),
                 "tannin": wine_signals.get("tannin"),
             },
-            "candidates": [serialize_recipe_candidate(recipe) for recipe in candidates],
+            "candidates": [
+                serialize_recipe_candidate(recipe, feedback_lookup.get(str(recipe.get("_id"))))
+                for recipe in candidates
+            ],
             "required_output": {
                 "results": [
                     {

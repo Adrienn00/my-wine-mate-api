@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from pairing_common import extract_recipe_signals, extract_wine_signals, mongo_database
-from llm.candidates import fetch_confirmed_recipes, fetch_confirmed_wines
 from llm.client import call_llm
 from llm.common import parse_object_id
+from llm.feedback import (
+    build_feedback_lookup_for_recipe,
+    build_feedback_lookup_for_wine,
+    feedback_reason_suffix,
+    rerank_candidates_with_feedback,
+)
 from llm.preferences import PreferenceProfile, WinePreferenceProfile
 from llm.serializers import (
     build_recipe_to_wine_prompt,
@@ -82,12 +88,39 @@ def _reason_for_wine_candidate_with_preferences(
     return " ".join(reasons) or "Recommended from local pairing signals and your saved preferences."
 
 
-def _fallback_recipe_results(candidates: list[dict[str, Any]], wine: dict[str, Any], top_k: int, profile: PreferenceProfile) -> list[dict[str, Any]]:
+def _append_feedback_reason(reason: str, stats: dict[str, Any] | None) -> str:
+    suffix = feedback_reason_suffix(stats)
+    if not suffix:
+        return reason
+    return f"{reason}{suffix}".strip()
+
+
+def _attach_feedback_metadata(results: list[dict[str, Any]], key: str, feedback_lookup: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched: list[dict[str, Any]] = []
+    for item in results:
+        stats = feedback_lookup.get(str(item.get(key) or ""))
+        enriched_item = dict(item)
+        if stats and stats.get("total"):
+            enriched_item["feedback"] = stats
+            enriched_item["reason"] = _append_feedback_reason(enriched_item.get("reason", ""), stats)
+        enriched.append(enriched_item)
+    return enriched
+
+
+def _fallback_recipe_results(
+    candidates: list[dict[str, Any]],
+    wine: dict[str, Any],
+    top_k: int,
+    profile: PreferenceProfile,
+    feedback_lookup: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     sliced = candidates[:top_k]
     total = max(1, len(sliced))
     results = []
+    feedback_lookup = feedback_lookup or {}
     for index, recipe in enumerate(sliced):
         probability = max(0.55, round(0.95 - (index * (0.3 / total)), 4))
+        stats = feedback_lookup.get(str(recipe.get("_id")))
         results.append(
             {
                 "recipe_id": str(recipe["_id"]),
@@ -95,7 +128,8 @@ def _fallback_recipe_results(candidates: list[dict[str, Any]], wine: dict[str, A
                 "match_score": probability,
                 "probability": probability,
                 "categories": recipe.get("recipeCategories", []),
-                "reason": _reason_for_recipe_candidate(recipe, wine, profile),
+                "reason": _append_feedback_reason(_reason_for_recipe_candidate(recipe, wine, profile), stats),
+                **({"feedback": stats} if stats and stats.get("total") else {}),
             }
         )
     return results
@@ -106,12 +140,15 @@ def _fallback_wine_results(
     recipe: dict[str, Any],
     top_k: int,
     profile: WinePreferenceProfile | None = None,
+    feedback_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     sliced = candidates[:top_k]
     total = max(1, len(sliced))
     results = []
+    feedback_lookup = feedback_lookup or {}
     for index, wine in enumerate(sliced):
         probability = max(0.55, round(0.95 - (index * (0.3 / total)), 4))
+        stats = feedback_lookup.get(str(wine.get("_id")))
         results.append(
             {
                 "wine_id": str(wine["_id"]),
@@ -120,11 +157,15 @@ def _fallback_wine_results(
                 "probability": probability,
                 "type": wine.get("type", ""),
                 "style": wine.get("style", ""),
-                "reason": (
-                    _reason_for_wine_candidate_with_preferences(recipe, wine, profile)
-                    if profile and profile.has_preferences
-                    else _reason_for_wine_candidate(recipe, wine)
+                "reason": _append_feedback_reason(
+                    (
+                        _reason_for_wine_candidate_with_preferences(recipe, wine, profile)
+                        if profile and profile.has_preferences
+                        else _reason_for_wine_candidate(recipe, wine)
+                    ),
+                    stats,
                 ),
+                **({"feedback": stats} if stats and stats.get("total") else {}),
             }
         )
     return results
@@ -143,24 +184,34 @@ def load_user_preferences(user_id: str | None, use_preferences: bool) -> dict[st
 
 
 def recommend_for_recipe(recipe_id: str, top_k: int, max_candidates: int, preferences: dict[str, Any] | None) -> dict:
+    started_at = time.perf_counter()
+    db_started_at = time.perf_counter()
     db = mongo_database()
     recipe = db["recipes"].find_one({"_id": parse_object_id(recipe_id)})
     if not recipe:
         raise RuntimeError(f"Recipe not found: {recipe_id}")
-
-    wines = fetch_confirmed_wines(db)
+    db_ms = round((time.perf_counter() - db_started_at) * 1000, 2)
     profile = WinePreferenceProfile.from_raw(preferences)
-    candidates = build_wine_candidates_via_search_plan(recipe, wines, preferences, max_candidates)
+    feedback_started_at = time.perf_counter()
+    feedback_lookup = build_feedback_lookup_for_recipe(recipe_id)
+    feedback_ms = round((time.perf_counter() - feedback_started_at) * 1000, 2)
+    candidates, candidate_timings = build_wine_candidates_via_search_plan(recipe, preferences, max_candidates)
+    rerank_started_at = time.perf_counter()
+    candidates = rerank_candidates_with_feedback(candidates, feedback_lookup)
+    rerank_ms = round((time.perf_counter() - rerank_started_at) * 1000, 2)
     try:
-        llm_response = call_llm(build_recipe_to_wine_prompt(recipe, candidates, preferences))
+        llm_started_at = time.perf_counter()
+        llm_response = call_llm(build_recipe_to_wine_prompt(recipe, candidates, preferences, feedback_lookup))
+        llm_ms = round((time.perf_counter() - llm_started_at) * 1000, 2)
         results = parse_recipe_to_wine_results(llm_response, top_k)
+        results = _attach_feedback_metadata(results, "wine_id", feedback_lookup)
         if results:
             source = f"mongodb:wines:llm-agent:{_recommendation_variant_suffix(preferences)}"
         else:
-            results = _fallback_wine_results(candidates, recipe, top_k, profile)
+            results = _fallback_wine_results(candidates, recipe, top_k, profile, feedback_lookup)
             source = f"mongodb:wines:fallback-empty:{_recommendation_variant_suffix(preferences)}"
     except Exception:
-        results = _fallback_wine_results(candidates, recipe, top_k, profile)
+        results = _fallback_wine_results(candidates, recipe, top_k, profile, feedback_lookup)
         source = f"mongodb:wines:fallback:{_recommendation_variant_suffix(preferences)}"
 
     return {
@@ -168,28 +219,46 @@ def recommend_for_recipe(recipe_id: str, top_k: int, max_candidates: int, prefer
         "source": source,
         "candidate_count": len(candidates),
         "results": results,
+        "timings": {
+            "db_load_ms": db_ms,
+            "feedback_lookup_ms": feedback_ms,
+            "feedback_rerank_ms": rerank_ms,
+            "llm_ranking_ms": llm_ms if "llm_ms" in locals() else 0.0,
+            **candidate_timings,
+            "total_python_ms": round((time.perf_counter() - started_at) * 1000, 2),
+        },
     }
 
 
 def recommend_for_wine(wine_id: str, top_k: int, max_candidates: int, preferences: dict[str, Any] | None) -> dict:
+    started_at = time.perf_counter()
+    db_started_at = time.perf_counter()
     db = mongo_database()
     wine = db["wines"].find_one({"_id": parse_object_id(wine_id)})
     if not wine:
         raise RuntimeError(f"Wine not found: {wine_id}")
-
-    recipes = fetch_confirmed_recipes(db)
+    db_ms = round((time.perf_counter() - db_started_at) * 1000, 2)
     profile = PreferenceProfile.from_raw(preferences)
-    candidates = build_recipe_candidates_via_search_plan(wine, recipes, preferences, max_candidates)
+    feedback_started_at = time.perf_counter()
+    feedback_lookup = build_feedback_lookup_for_wine(wine_id)
+    feedback_ms = round((time.perf_counter() - feedback_started_at) * 1000, 2)
+    candidates, candidate_timings = build_recipe_candidates_via_search_plan(wine, preferences, max_candidates)
+    rerank_started_at = time.perf_counter()
+    candidates = rerank_candidates_with_feedback(candidates, feedback_lookup)
+    rerank_ms = round((time.perf_counter() - rerank_started_at) * 1000, 2)
     try:
-        llm_response = call_llm(build_wine_to_recipe_prompt(wine, candidates, preferences))
+        llm_started_at = time.perf_counter()
+        llm_response = call_llm(build_wine_to_recipe_prompt(wine, candidates, preferences, feedback_lookup))
+        llm_ms = round((time.perf_counter() - llm_started_at) * 1000, 2)
         results = parse_wine_to_recipe_results(llm_response, top_k)
+        results = _attach_feedback_metadata(results, "recipe_id", feedback_lookup)
         if results:
             source = f"mongodb:recipes:llm-agent:{_recommendation_variant_suffix(preferences)}"
         else:
-            results = _fallback_recipe_results(candidates, wine, top_k, profile)
+            results = _fallback_recipe_results(candidates, wine, top_k, profile, feedback_lookup)
             source = f"mongodb:recipes:fallback-empty:{_recommendation_variant_suffix(preferences)}"
     except Exception:
-        results = _fallback_recipe_results(candidates, wine, top_k, profile)
+        results = _fallback_recipe_results(candidates, wine, top_k, profile, feedback_lookup)
         source = f"mongodb:recipes:fallback:{_recommendation_variant_suffix(preferences)}"
 
     return {
@@ -197,4 +266,12 @@ def recommend_for_wine(wine_id: str, top_k: int, max_candidates: int, preference
         "source": source,
         "candidate_count": len(candidates),
         "results": results,
+        "timings": {
+            "db_load_ms": db_ms,
+            "feedback_lookup_ms": feedback_ms,
+            "feedback_rerank_ms": rerank_ms,
+            "llm_ranking_ms": llm_ms if "llm_ms" in locals() else 0.0,
+            **candidate_timings,
+            "total_python_ms": round((time.perf_counter() - started_at) * 1000, 2),
+        },
     }
