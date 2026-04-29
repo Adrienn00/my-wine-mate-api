@@ -1,5 +1,30 @@
 const Wine = require("./wine.model");
 const User = require("../user/user.model");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+const fs = require("fs");
+const path = require("path");
+
+const execFileAsync = promisify(execFile);
+const BACKEND_ROOT = path.resolve(__dirname, "../..");
+const VENV_PYTHON_PATH = path.join(BACKEND_ROOT, ".venv", "bin", "python");
+const LLM_PREFERENCE_SCRIPT_PATH = path.join(
+  BACKEND_ROOT,
+  "ai",
+  "llm",
+  "preference_wine_recommendations.py"
+);
+
+function resolvePythonExecutable() {
+  if (fs.existsSync(VENV_PYTHON_PATH)) {
+    return VENV_PYTHON_PATH;
+  }
+  return "python3";
+}
+
+function isLlmConfigured() {
+  return Boolean(String(process.env.GROQ_API_KEY || "").trim());
+}
 
 function asArray(value) {
   return Array.isArray(value) ? value : value ? [value] : [];
@@ -28,6 +53,16 @@ function unique(values) {
 
 function clamp(value, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
+}
+
+function withRecommendationMetadata(wine, type) {
+  const isAi = type === "ai";
+  return {
+    ...wine,
+    recommendationType: isAi ? "ai" : "smart",
+    recommendationLabel: isAi ? "AI recommendation" : "Smart recommendation",
+    recommendationSource: isAi ? "llm-mcp" : "local-scoring",
+  };
 }
 
 function overlapRatio(prefValues, wineValues) {
@@ -288,7 +323,7 @@ function scoreWine(wine, catalog, context) {
   const matchPercent = context.maxScore ? Math.round(clamp(score / context.maxScore) * 100) : 0;
 
   return {
-    ...wine.toObject(),
+    ...withRecommendationMetadata(wine.toObject(), "smart"),
     score,
     matchPercent,
     reasons,
@@ -301,7 +336,7 @@ function buildFallbackRecommendations(wines, limit) {
       const rating = averageRating(wine);
       const ratingPercent = Math.round((rating / 5) * 100);
       return {
-        ...wine.toObject(),
+        ...withRecommendationMetadata(wine.toObject(), "smart"),
         score: rating,
         matchPercent: ratingPercent,
         reasons: rating ? ["Popular among users"] : ["Generally recommended choice"],
@@ -311,12 +346,68 @@ function buildFallbackRecommendations(wines, limit) {
     .slice(0, limit);
 }
 
-async function recommendWinesForPreferences({ userId = null, preferences = null, limit = 6 } = {}) {
+async function getEffectivePreferences({ userId = null, preferences = null } = {}) {
   let effectivePreferences = preferences;
 
   if ((!effectivePreferences || !Object.keys(effectivePreferences).length) && userId) {
     const user = await User.findById(userId).select("preferences");
     effectivePreferences = user?.preferences || {};
+  }
+
+  return effectivePreferences || {};
+}
+
+async function getLlmMcpWineRecommendations({ preferences = {}, limit = 6 } = {}) {
+  if (!isLlmConfigured()) {
+    throw new Error("LLM recommender is not configured. Set GROQ_API_KEY.");
+  }
+
+  if (!fs.existsSync(LLM_PREFERENCE_SCRIPT_PATH)) {
+    throw new Error("LLM preference recommender script not found.");
+  }
+
+  const pythonExecutable = resolvePythonExecutable();
+  const args = [
+    LLM_PREFERENCE_SCRIPT_PATH,
+    "--top-k",
+    String(limit),
+    "--max-candidates",
+    String(Math.max(limit, 25)),
+    "--preferences-json",
+    JSON.stringify(preferences || {}),
+  ];
+
+  const { stdout, stderr } = await execFileAsync(pythonExecutable, args, {
+    cwd: BACKEND_ROOT,
+    timeout: 120000,
+  });
+
+  const rawOutput = String(stdout || "").trim();
+  if (!rawOutput) {
+    throw new Error(String(stderr || "The LLM preference recommender returned no output.").trim());
+  }
+
+  const parsed = JSON.parse(rawOutput);
+  return Array.isArray(parsed?.results)
+    ? parsed.results.map((wine) => withRecommendationMetadata(wine, "ai"))
+    : [];
+}
+
+async function recommendWinesForPreferences({ userId = null, preferences = null, limit = 6 } = {}) {
+  const effectivePreferences = await getEffectivePreferences({ userId, preferences });
+
+  if (isLlmConfigured()) {
+    try {
+      const llmRecommendations = await getLlmMcpWineRecommendations({
+        preferences: effectivePreferences,
+        limit,
+      });
+      if (llmRecommendations.length) {
+        return llmRecommendations;
+      }
+    } catch (error) {
+      console.warn("LLM/MCP wine recommendation failed, falling back to local scoring:", error.message);
+    }
   }
 
   const confirmedWines = await Wine.find({ is_confirmed: true });
