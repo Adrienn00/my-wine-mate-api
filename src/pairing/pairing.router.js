@@ -3,6 +3,7 @@ const router = express.Router();
 
 const pairingController = require("./pairing.controller");
 const pairingAgentController = require("./pairingAgent.controller");
+const { chat: pairingChat, chatStream: pairingChatStream } = require("./pairingChat.controller");
 const {
   authMiddleware,
   optionalAuthMiddleware,
@@ -11,9 +12,11 @@ const {
 
 router.get("/", pairingController.getPairingRules);
 router.get("/recommend", pairingController.getAiRecommendations);
-router.get("/recommend-bundle", pairingController.getAiRecommendationBundle);
+router.get("/recommend-bundle", optionalAuthMiddleware, pairingController.getAiRecommendationBundle);
 router.get("/recommend-tabs", optionalAuthMiddleware, pairingController.getRecommendationTabs);
 router.post("/agent-search", optionalAuthMiddleware, pairingAgentController.searchConversationalPairings);
+router.post("/chat", optionalAuthMiddleware, pairingChat);
+router.post("/chat-stream", optionalAuthMiddleware, pairingChatStream);
 router.post("/feedback", optionalAuthMiddleware, pairingController.savePairingFeedback);
 router.get("/admin/feedback", authMiddleware, adminMiddleware, pairingController.getPairingFeedbackList);
 router.put("/admin/feedback/:id/status", authMiddleware, adminMiddleware, pairingController.reviewPairingFeedback);

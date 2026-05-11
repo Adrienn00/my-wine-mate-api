@@ -42,6 +42,16 @@ def parse_args() -> argparse.Namespace:
 def load_model(model_path: Path):
     if not model_path.exists():
         raise RuntimeError(f"Model not found at {model_path}. Train it first.")
+    # xgboost ≥2.0 removed the xgboost.sklearn submodule; provide a shim so
+    # joblib can unpickle models that were saved with an older version.
+    try:
+        import xgboost.sklearn as _  # noqa: F401
+    except ModuleNotFoundError:
+        import types
+        import xgboost as _xgb
+        _compat = types.ModuleType("xgboost.sklearn")
+        _compat.XGBClassifier = _xgb.XGBClassifier
+        sys.modules["xgboost.sklearn"] = _compat
     return joblib.load(model_path)
 
 
