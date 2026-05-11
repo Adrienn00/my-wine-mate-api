@@ -88,7 +88,7 @@ def _fetch_confirmed_wines() -> list[dict[str, Any]]:
         "is_confirmed": 1,
         "status": 1,
     }
-    wines = list(db["wines"].find({}, projection))
+    wines = list(db["wines"].find({}, {**projection, "imageUrl": 1}))
     return [wine for wine in wines if is_confirmed(wine)]
 
 
@@ -108,6 +108,7 @@ def serialize_recipe(recipe: dict[str, Any], score: float = 0.0) -> dict[str, An
         "spice_level": signals.get("spice_level"),
         "sweetness": signals.get("sweetness"),
         "winePairingHints": recipe.get("winePairingHints", []),
+        "imageUrl": recipe.get("imageUrl", ""),
         "retrieval_score": round(float(score), 4),
     }
 
@@ -127,6 +128,7 @@ def serialize_wine(wine: dict[str, Any], score: float = 0.0) -> dict[str, Any]:
         "acidity": signals.get("acidity"),
         "tannin": signals.get("tannin"),
         "pairing_targets": signals.get("pairing_targets", []),
+        "imageUrl": wine.get("imageUrl", ""),
         "retrieval_score": round(float(score), 4),
     }
 
