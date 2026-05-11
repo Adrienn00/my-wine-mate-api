@@ -93,15 +93,17 @@ def fetch_feedback_rows(db, valid_recipe_ids: set[str], valid_wine_ids: set[str]
         if feedback not in {"good", "bad"}:
           continue
 
+        source = str(entry.get("source") or "user")
         rows.append(
             {
                 "recipe_id": recipe_id,
                 "wine_id": wine_id,
                 "label": 1 if feedback == "good" else 0,
                 "label_name": feedback,
-                "rule_name": "user_feedback",
+                "rule_name": f"{source}_feedback",
                 "rule_confidence": "high",
                 "rule_score": 10,
+                "feedback_source": source,
                 "feedback_direction": entry.get("direction"),
                 "feedback_user_id": str(entry.get("userId")) if entry.get("userId") else None,
                 "feedback_created_at": (
@@ -266,6 +268,8 @@ def build_dataset(
         raise RuntimeError("No labeled training pairs were generated from the knowledge base.")
 
     dataset = pd.DataFrame(rows)
+    llm_feedback_rows = sum(1 for r in rows if r.get("feedback_source") == "llm")
+    user_feedback_rows = int(feedback_rows_used) - llm_feedback_rows
     metadata = {
         "rows": int(len(dataset)),
         "recipes_used": int(len(recipes)),
@@ -274,6 +278,8 @@ def build_dataset(
         "heuristic_rows_used": int(heuristic_rows_used),
         "label_breakdown": summary,
         "feedback_rows_used": int(feedback_rows_used),
+        "llm_feedback_rows": llm_feedback_rows,
+        "user_feedback_rows": user_feedback_rows,
     }
     return dataset, metadata
 
