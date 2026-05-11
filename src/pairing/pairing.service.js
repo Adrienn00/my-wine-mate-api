@@ -17,6 +17,11 @@ const MODEL_PATH = path.join(BACKEND_ROOT, "ai", "artifacts", "xgboost_pairing_m
 function nowMs() {
   return Date.now();
 }
+
+const LLM_FEEDBACK_MIN_CONFIDENCE = parseFloat(process.env.LLM_FEEDBACK_MIN_CONFIDENCE || "0.60");
+const LLM_FEEDBACK_AUTO_APPROVE_THRESHOLD = parseFloat(process.env.LLM_FEEDBACK_AUTO_APPROVE_THRESHOLD || "0.85");
+const AUTO_TRAIN_THRESHOLD = parseInt(process.env.AUTO_TRAIN_THRESHOLD || "20", 10);
+const AUTO_TRAIN_COOLDOWN_HOURS = parseInt(process.env.AUTO_TRAIN_COOLDOWN_HOURS || "24", 10);
 const TRAINING_METRICS_PATH = path.join(BACKEND_ROOT, "ai", "artifacts", "training_metrics.json");
 
 function resolvePythonExecutable() {
@@ -153,6 +158,115 @@ function attachRecommendationMetadata(payload, engine) {
   };
 }
 
+async function saveLlmFeedbackFromRecommendations({ results, direction, wineId, recipeId }) {
+  const eligible = (results || []).filter(
+    (r) => typeof r.probability === "number" && r.probability >= LLM_FEEDBACK_MIN_CONFIDENCE
+  );
+  if (!eligible.length) return;
+
+  const ops = eligible.map((r) => {
+    const confidence = r.probability;
+    const status = confidence >= LLM_FEEDBACK_AUTO_APPROVE_THRESHOLD ? "approved" : "pending";
+    const resolvedWineId = wineId || r.wine_id || r._id;
+    const resolvedRecipeId = recipeId || r.recipe_id || r._id;
+
+    return {
+      updateOne: {
+        filter: { recipeId: resolvedRecipeId, wineId: resolvedWineId, direction, source: "llm" },
+        update: {
+          $set: {
+            feedback: "good",
+            confidence,
+            status,
+            recommendationScore: confidence,
+            reviewedAt: status === "approved" ? new Date() : null,
+          },
+          $setOnInsert: { recipeId: resolvedRecipeId, wineId: resolvedWineId, direction, source: "llm", userId: null },
+        },
+        upsert: true,
+      },
+    };
+  });
+
+  try {
+    const result = await PairingFeedback.bulkWrite(ops, { ordered: false });
+    const saved = (result.upsertedCount || 0) + (result.modifiedCount || 0);
+    if (saved > 0) {
+      console.log(`[llm-feedback] saved ${saved} entries (${eligible.length} eligible, threshold=${LLM_FEEDBACK_MIN_CONFIDENCE})`);
+    }
+  } catch (error) {
+    console.warn("[llm-feedback] bulkWrite error:", error.message);
+  }
+}
+
+async function checkAndTriggerAutoTraining() {
+  try {
+    const lastRun = await PairingTrainingRun.findOne({ status: "completed" }).sort({ completedAt: -1 });
+    const cooldownCutoff = new Date(Date.now() - AUTO_TRAIN_COOLDOWN_HOURS * 60 * 60 * 1000);
+
+    if (lastRun?.completedAt && lastRun.completedAt > cooldownCutoff) {
+      return;
+    }
+
+    const sinceFilter = lastRun?.completedAt ? { updatedAt: { $gt: lastRun.completedAt } } : {};
+    const newAutoApproved = await PairingFeedback.countDocuments({
+      source: "llm",
+      status: "approved",
+      ...sinceFilter,
+    });
+
+    if (newAutoApproved < AUTO_TRAIN_THRESHOLD) {
+      return;
+    }
+
+    console.log(`[auto-train] ${newAutoApproved} new LLM-approved labels → triggering retraining`);
+    const [approvedFeedbackCount, pendingFeedbackCount] = await Promise.all([
+      PairingFeedback.countDocuments(approvedFeedbackFilter()),
+      PairingFeedback.countDocuments(pendingFeedbackFilter()),
+    ]);
+
+    const trainingRun = await PairingTrainingRun.create({
+      status: "running",
+      triggerSource: "auto",
+      triggeredBy: null,
+      approvedFeedbackCount,
+      pendingFeedbackCount,
+      startedAt: new Date(),
+    });
+
+    const pythonExecutable = resolvePythonExecutable();
+    execFileAsync(pythonExecutable, [TRAIN_SCRIPT_PATH, "--include-feedback"], {
+      cwd: BACKEND_ROOT,
+      timeout: 600000,
+      maxBuffer: 10 * 1024 * 1024,
+    })
+      .then(async ({ stdout, stderr }) => {
+        let metrics = null;
+        try {
+          if (fs.existsSync(TRAINING_METRICS_PATH)) {
+            metrics = JSON.parse(fs.readFileSync(TRAINING_METRICS_PATH, "utf-8"));
+          }
+        } catch {}
+        trainingRun.status = "completed";
+        trainingRun.stdout = String(stdout || "");
+        trainingRun.stderr = String(stderr || "");
+        trainingRun.metrics = metrics;
+        trainingRun.completedAt = new Date();
+        await trainingRun.save();
+        console.log("[auto-train] completed successfully");
+      })
+      .catch(async (error) => {
+        trainingRun.status = "failed";
+        trainingRun.stderr = String(error.stderr || error.message || "");
+        trainingRun.completedAt = new Date();
+        await trainingRun.save();
+        console.warn("[auto-train] failed:", trainingRun.stderr.slice(0, 200));
+      });
+  } catch (error) {
+    console.warn("[auto-train] check error:", error.message);
+  }
+}
+
 async function getXgboostRecommendations({ recipeId, wineId, topK = 5 }) {
   const startedAt = nowMs();
   if (Boolean(recipeId) === Boolean(wineId)) {
@@ -202,6 +316,7 @@ async function getLlmRecommendations({
   maxCandidates = 25,
   userId = null,
   usePreferences = false,
+  captureTrainingData = false,
 }) {
   const startedAt = nowMs();
   if (Boolean(recipeId) === Boolean(wineId)) {
@@ -245,6 +360,16 @@ async function getLlmRecommendations({
     total_backend_ms: nowMs() - startedAt,
   };
   console.log("[pairings:llm:timings]", JSON.stringify(response.timings));
+
+  if (captureTrainingData && !usePreferences) {
+    const direction = wineId ? "wine_to_recipe" : "recipe_to_wine";
+    setImmediate(() => {
+      saveLlmFeedbackFromRecommendations({ results: response.results, direction, wineId, recipeId })
+        .then(() => checkAndTriggerAutoTraining())
+        .catch((err) => console.warn("[llm-feedback] background error:", err.message));
+    });
+  }
+
   return response;
 }
 
@@ -268,7 +393,14 @@ async function getAiRecommendationsByEngine({
 
   if (isLlmConfigured()) {
     try {
-      return await getLlmRecommendations({ recipeId, wineId, topK, userId, usePreferences });
+      return await getLlmRecommendations({
+        recipeId,
+        wineId,
+        topK,
+        userId,
+        usePreferences,
+        captureTrainingData: !usePreferences,
+      });
     } catch (error) {
       console.warn("LLM pairing recommendation failed, falling back to XGBoost:", error.message);
     }
@@ -445,7 +577,8 @@ async function approvePendingPairingFeedback(reviewedBy = null) {
 }
 
 async function getPairingTrainingSummary() {
-  const [totalFeedback, pendingFeedback, approvedFeedback, rejectedFeedback, approvedGood, approvedBad, lastRun] =
+  const [totalFeedback, pendingFeedback, approvedFeedback, rejectedFeedback, approvedGood, approvedBad,
+    llmTotal, llmAutoApproved, llmPending, lastRun] =
     await Promise.all([
       PairingFeedback.countDocuments(),
       PairingFeedback.countDocuments(pendingFeedbackFilter()),
@@ -453,6 +586,9 @@ async function getPairingTrainingSummary() {
       PairingFeedback.countDocuments({ status: "rejected" }),
       PairingFeedback.countDocuments({ ...approvedFeedbackFilter(), feedback: "good" }),
       PairingFeedback.countDocuments({ ...approvedFeedbackFilter(), feedback: "bad" }),
+      PairingFeedback.countDocuments({ source: "llm" }),
+      PairingFeedback.countDocuments({ source: "llm", status: "approved" }),
+      PairingFeedback.countDocuments({ source: "llm", status: "pending" }),
       PairingTrainingRun.findOne().sort({ createdAt: -1 }).populate("triggeredBy", "username email"),
     ]);
 
@@ -464,6 +600,10 @@ async function getPairingTrainingSummary() {
       })
     : approvedFeedback;
 
+  const nextAutoTrainAt = lastCompletedAt
+    ? new Date(lastCompletedAt.getTime() + AUTO_TRAIN_COOLDOWN_HOURS * 60 * 60 * 1000)
+    : null;
+
   return {
     feedback: {
       total: totalFeedback,
@@ -473,9 +613,19 @@ async function getPairingTrainingSummary() {
       approvedGood,
       approvedBad,
     },
+    llmFeedback: {
+      total: llmTotal,
+      autoApproved: llmAutoApproved,
+      pending: llmPending,
+      autoApproveThreshold: LLM_FEEDBACK_AUTO_APPROVE_THRESHOLD,
+      minConfidence: LLM_FEEDBACK_MIN_CONFIDENCE,
+    },
     training: {
       recommendedToRetrain: approvedSinceLastTraining > 0,
       approvedSinceLastTraining,
+      autoTrainThreshold: AUTO_TRAIN_THRESHOLD,
+      autoTrainCooldownHours: AUTO_TRAIN_COOLDOWN_HOURS,
+      nextAutoTrainAt,
       lastRun: serializeTrainingRun(lastRun),
       modelExists: fs.existsSync(MODEL_PATH),
       metricsExists: fs.existsSync(TRAINING_METRICS_PATH),
@@ -491,7 +641,7 @@ async function trainPairingModel({ triggeredBy = null } = {}) {
 
   const trainingRun = await PairingTrainingRun.create({
     status: "running",
-    triggerSource: "admin",
+    triggerSource: triggeredBy ? "admin" : "auto",
     triggeredBy: triggeredBy && mongoose.Types.ObjectId.isValid(triggeredBy) ? triggeredBy : null,
     approvedFeedbackCount,
     pendingFeedbackCount,
@@ -547,6 +697,7 @@ module.exports = {
   getAiRecommendationsByEngine,
   getRecommendationTabs,
   savePairingFeedback,
+  saveLlmFeedbackFromRecommendations,
   getPairingFeedbackList,
   updatePairingFeedbackStatus,
   approvePendingPairingFeedback,
