@@ -6,6 +6,7 @@ const wineRecommendationController = require("./wineRecommendation.controller");
 const { authMiddleware, adminMiddleware } = require("../user/user.middleware");
 
 router.post("/recommendations", authMiddleware, wineRecommendationController.recommendWines);
+router.post("/recommendations/split", authMiddleware, wineRecommendationController.recommendWinesSplit);
 
 router.post("/:id/rating", authMiddleware, wineController.newRating);
 router.delete("/:id/rating/:ratingId", authMiddleware, adminMiddleware, wineController.removeRating);

@@ -425,6 +425,51 @@ async function recommendWinesForPreferences({ userId = null, preferences = null,
     .slice(0, limit);
 }
 
+async function buildPersonalRecommendations({ effectivePreferences, confirmedWines, catalog, context, limit }) {
+  if (isLlmConfigured()) {
+    try {
+      const llmResults = await getLlmMcpWineRecommendations({ preferences: effectivePreferences, limit });
+      if (llmResults.length) return llmResults;
+    } catch (error) {
+      console.warn("LLM preference recommendation failed in split, falling back to local scoring:", error.message);
+    }
+  }
+
+  return confirmedWines
+    .map((wine) => scoreWine(wine, catalog, context))
+    .filter((wine) => wine.score > 0.4)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+async function recommendWinesSplit({ userId = null, preferences = null, limit = 6 } = {}) {
+  const effectivePreferences = await getEffectivePreferences({ userId, preferences });
+
+  const confirmedWines = await Wine.find({ is_confirmed: true });
+  const catalog = buildRecommendationCatalog(confirmedWines, effectivePreferences || {});
+  const context = buildPreferenceContext(effectivePreferences || {}, catalog);
+
+  const general = buildFallbackRecommendations(confirmedWines, limit);
+
+  if (!context.hasAnyPreference) {
+    return { personal: [], general, hasPreferences: false };
+  }
+
+  const personal = await buildPersonalRecommendations({
+    effectivePreferences,
+    confirmedWines,
+    catalog,
+    context,
+    limit,
+  });
+
+  const personalIds = new Set(personal.map((w) => String(w._id)));
+  const filteredGeneral = general.filter((w) => !personalIds.has(String(w._id))).slice(0, limit);
+
+  return { personal, general: filteredGeneral, hasPreferences: true };
+}
+
 module.exports = {
   recommendWinesForPreferences,
+  recommendWinesSplit,
 };
