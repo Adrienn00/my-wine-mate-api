@@ -1,11 +1,17 @@
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 const jwt = require("jsonwebtoken");
 const User = require("./user.model.js");
 const bcrypt = require("bcrypt");
 const Wine = require("../wine/wine.model.js");
 const Recipe = require("../recipe/recipe.model.js");
+const PairingFeedback = require("../pairing/pairingFeedback.model.js");
+const PairingRule = require("../pairing/pairing.model.js");
+const PairingTrainingRun = require("../pairing/pairingTrainingRun.model.js");
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const TRAINING_METRICS_PATH = path.join(__dirname, "../../ai/artifacts/training_metrics.json");
 
 function generateToken(user) {
   return jwt.sign(
@@ -149,11 +155,134 @@ async function updateUserRole(userId, isAdmin) {
 }
 
 async function getSystemStats() {
-  const usersCount = await User.countDocuments();
-  const winesCount = await Wine.countDocuments();
-  const confirmedWinesCount = await Wine.countDocuments({ is_confirmed: true });
-  const pendingWinesCount = await Wine.countDocuments({ is_confirmed: false });
+  const [
+    usersCount,
+    adminUsersCount,
+    winesCount,
+    confirmedWinesCount,
+    pendingWinesCount,
+    recipesCount,
+    confirmedRecipesCount,
+    pendingRecipesCount,
+    activePairingRulesCount,
+    feedbackTotal,
+    feedbackGood,
+    feedbackBad,
+    w2rTotal,
+    w2rGood,
+    r2wTotal,
+    r2wGood,
+    llmAutoApproved,
+    llmPending,
+    ratingAgg,
+    topRatedWines,
+    trainingHistory,
+  ] = await Promise.all([
+    User.countDocuments(),
+    User.countDocuments({ isAdmin: true }),
+    Wine.countDocuments(),
+    Wine.countDocuments({ is_confirmed: true }),
+    Wine.countDocuments({ is_confirmed: false }),
+    Recipe.countDocuments(),
+    Recipe.countDocuments({ is_confirmed: true }),
+    Recipe.countDocuments({ is_confirmed: false }),
+    PairingRule.countDocuments({ active: true }),
+    PairingFeedback.countDocuments({ status: "approved" }),
+    PairingFeedback.countDocuments({ status: "approved", feedback: "good" }),
+    PairingFeedback.countDocuments({ status: "approved", feedback: "bad" }),
+    PairingFeedback.countDocuments({ status: "approved", direction: "wine_to_recipe" }),
+    PairingFeedback.countDocuments({ status: "approved", direction: "wine_to_recipe", feedback: "good" }),
+    PairingFeedback.countDocuments({ status: "approved", direction: "recipe_to_wine" }),
+    PairingFeedback.countDocuments({ status: "approved", direction: "recipe_to_wine", feedback: "good" }),
+    PairingFeedback.countDocuments({ source: "llm", status: "approved" }),
+    PairingFeedback.countDocuments({ source: "llm", status: "pending" }),
+    Wine.aggregate([
+      { $match: { is_confirmed: true, ratings: { $exists: true, $not: { $size: 0 } } } },
+      { $unwind: "$ratings" },
+      { $match: { "ratings.rating": { $type: "number" } } },
+      { $group: { _id: null, avgRating: { $avg: "$ratings.rating" }, totalRatings: { $sum: 1 } } },
+    ]),
+    Wine.aggregate([
+      { $match: { is_confirmed: true } },
+      { $project: {
+        name: 1,
+        ratingsCount: { $size: { $ifNull: ["$ratings", []] } },
+        avgRating: { $avg: "$ratings.rating" },
+      }},
+      { $match: { ratingsCount: { $gt: 0 } } },
+      { $sort: { ratingsCount: -1 } },
+      { $limit: 5 },
+    ]),
+    PairingTrainingRun.find({ status: "completed" })
+      .sort({ completedAt: -1 })
+      .limit(5)
+      .select("triggerSource completedAt metrics approvedFeedbackCount"),
+  ]);
+
+  let modelMetrics = null;
+  try {
+    if (fs.existsSync(TRAINING_METRICS_PATH)) {
+      modelMetrics = JSON.parse(fs.readFileSync(TRAINING_METRICS_PATH, "utf-8"));
+    }
+  } catch {}
+
+  const avgRating = ratingAgg[0]?.avgRating ?? null;
+  const totalRatings = ratingAgg[0]?.totalRatings ?? 0;
+
   return {
+    catalog: {
+      usersCount,
+      adminUsersCount,
+      winesCount,
+      confirmedWinesCount,
+      pendingWinesCount,
+      recipesCount,
+      confirmedRecipesCount,
+      pendingRecipesCount,
+      activePairingRulesCount,
+    },
+    recommendationQuality: {
+      feedbackTotal,
+      feedbackGood,
+      feedbackBad,
+      accuracyPercent: feedbackTotal > 0 ? Math.round((feedbackGood / feedbackTotal) * 100) : null,
+      wineToRecipe: {
+        total: w2rTotal,
+        good: w2rGood,
+        accuracyPercent: w2rTotal > 0 ? Math.round((w2rGood / w2rTotal) * 100) : null,
+      },
+      recipeToWine: {
+        total: r2wTotal,
+        good: r2wGood,
+        accuracyPercent: r2wTotal > 0 ? Math.round((r2wGood / r2wTotal) * 100) : null,
+      },
+      llm: {
+        autoApproved: llmAutoApproved,
+        pending: llmPending,
+      },
+    },
+    modelPerformance: {
+      metrics: modelMetrics,
+      trainingHistory: trainingHistory.map((run) => ({
+        triggerSource: run.triggerSource,
+        completedAt: run.completedAt,
+        approvedFeedbackCount: run.approvedFeedbackCount,
+        accuracy: run.metrics?.accuracy ?? null,
+        roc_auc: run.metrics?.roc_auc ?? null,
+        rows: run.metrics?.rows ?? null,
+      })),
+    },
+    wineRatings: {
+      avgRating: avgRating !== null ? Math.round(avgRating * 10) / 10 : null,
+      totalRatings,
+      topRatedWines: topRatedWines.map((w) => ({
+        _id: w._id,
+        name: w.name,
+        ratingsCount: w.ratingsCount,
+        avgRating: w.avgRating !== null ? Math.round(w.avgRating * 10) / 10 : null,
+      })),
+    },
+    // legacy fields for backward compatibility
     usersCount,
     winesCount,
     confirmedWinesCount,
