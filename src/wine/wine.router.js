@@ -5,6 +5,9 @@ const wineController = require("./wine.controller");
 const wineRecommendationController = require("./wineRecommendation.controller");
 const { authMiddleware, adminMiddleware } = require("../user/user.middleware");
 
+router.post("/ocr-scan", wineController.ocrScan);
+router.post("/ai-enrich", wineController.aiEnrich);
+
 router.post("/recommendations", authMiddleware, wineRecommendationController.recommendWines);
 router.post("/recommendations/split", authMiddleware, wineRecommendationController.recommendWinesSplit);
 

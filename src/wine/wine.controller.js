@@ -1,5 +1,7 @@
 const wineService = require("../wine/wine.service.js");
 const liveOffersService = require("../wine/liveOffers.service.js");
+const wineOcrService = require("../wine/wineOcr.service.js");
+const wineEnrichService = require("../wine/wineEnrich.service.js");
 const User = require("../user/user.model");
 
 async function getWines(req, res) {
@@ -181,6 +183,32 @@ async function deleteWine(req, res) {
   }
 }
 
+async function ocrScan(req, res) {
+  try {
+    const { image, mimeType } = req.body;
+    if (!image) {
+      return res.status(400).json({ message: "Missing image field (base64 string)." });
+    }
+    const result = await wineOcrService.extractWineLabelFromImage(image, mimeType || "image/jpeg");
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(500).json({ message: "OCR failed.", error: err.message });
+  }
+}
+
+async function aiEnrich(req, res) {
+  try {
+    const { name, winery, year, region, type } = req.body;
+    if (!name) {
+      return res.status(400).json({ message: "Missing required field: name." });
+    }
+    const result = await wineEnrichService.enrichWineWithAI({ name, winery, year, region, type });
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(500).json({ message: "AI enrich failed.", error: err.message });
+  }
+}
+
 module.exports = {
   getWines,
   getWineById,
@@ -190,4 +218,6 @@ module.exports = {
   newRating,
   removeRating,
   getLiveOffers,
+  ocrScan,
+  aiEnrich,
 };
