@@ -14,6 +14,7 @@ from mcp.tools import (
     get_recipe_by_id,
     get_user_preferences,
     get_wine_by_id,
+    ocr_scan_label,
     search_recipes,
     search_wines,
 )
@@ -87,6 +88,18 @@ TOOLS = {
             "required": ["wine_id"],
         },
         "handler": get_wine_by_id,
+    },
+    "ocr_scan_label": {
+        "description": "Read a wine bottle label from a base64-encoded image and extract structured wine data (name, winery, year, type, region, grape varieties, alcohol).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "base64_image": {"type": "string", "description": "Base64-encoded image data (without data URL prefix)"},
+                "mime_type": {"type": "string", "description": "MIME type of the image, e.g. image/jpeg"},
+            },
+            "required": ["base64_image"],
+        },
+        "handler": ocr_scan_label,
     },
 }
 

@@ -52,15 +52,15 @@ function runPythonAgent(input) {
   });
 }
 
-async function runConversationalChat({ messages, userId = null, topK = 4 }) {
+async function runConversationalChat({ messages, userId = null, topK = 4, image = null, mimeType = "image/jpeg" }) {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new Error("Pass at least one message.");
   }
 
-  return runPythonAgent({ messages, userId, topK });
+  return runPythonAgent({ messages, userId, topK, image, mimeType });
 }
 
-function streamConversationalChat({ messages, userId = null, topK = 4 }, res) {
+function streamConversationalChat({ messages, userId = null, topK = 4, image = null, mimeType = "image/jpeg" }, res) {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -79,7 +79,9 @@ function streamConversationalChat({ messages, userId = null, topK = 4 }, res) {
     if (!trimmed) return;
     try {
       const event = JSON.parse(trimmed);
-      if (event.t === "chunk") {
+      if (event.t === "ocr") {
+        res.write(`data: ${JSON.stringify({ type: "ocr", content: event.c })}\n\n`);
+      } else if (event.t === "chunk") {
         res.write(`data: ${JSON.stringify({ type: "chunk", content: event.c })}\n\n`);
       } else if (event.t === "done") {
         res.write(
@@ -121,7 +123,7 @@ function streamConversationalChat({ messages, userId = null, topK = 4 }, res) {
     }
   });
 
-  proc.stdin.write(JSON.stringify({ messages, userId, topK, stream: true }));
+  proc.stdin.write(JSON.stringify({ messages, userId, topK, stream: true, image, mimeType }));
   proc.stdin.end();
 }
 

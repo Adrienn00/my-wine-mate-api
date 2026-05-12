@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 import sys
+import urllib.request
 from typing import Any
 from pathlib import Path
 
@@ -243,3 +246,51 @@ def get_wine_by_id(wine_id: str) -> dict[str, Any]:
     if not wine:
         raise RuntimeError("Wine not found.")
     return serialize_wine(wine, 0.0)
+
+
+def ocr_scan_label(base64_image: str, mime_type: str = "image/jpeg") -> dict[str, Any]:
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured.")
+
+    payload = json.dumps({
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"},
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "You are a wine label reader. Extract information from this wine bottle label image.\n"
+                        "Return a JSON object with exactly these fields (use null for fields you cannot determine):\n"
+                        '{"name":"wine product name","winery":"producer or winery name","year":2019,'
+                        '"type":"Red | White | Rosé | Sparkling | Dessert | Fortified",'
+                        '"region":"region or appellation","country":"country of origin",'
+                        '"grapeVarieties":["Merlot"],"alcohol":13.5,"rawText":"all text visible on label"}\n'
+                        "Only return the JSON, no explanation."
+                    ),
+                },
+            ],
+        }],
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        result = json.loads(resp.read().decode("utf-8"))
+
+    content = (result.get("choices") or [{}])[0].get("message", {}).get("content", "{}")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {"rawText": content}

@@ -13,6 +13,8 @@ async function chat(req, res) {
       messages,
       userId: req.user?.id || req.body.userId || null,
       topK: Number.isFinite(topK) && topK > 0 ? topK : 4,
+      image: req.body.image || null,
+      mimeType: req.body.mimeType || "image/jpeg",
     });
 
     return res.status(200).json(result);
@@ -39,6 +41,8 @@ function chatStream(req, res) {
       messages,
       userId: req.user?.id || req.body.userId || null,
       topK: Number.isFinite(topK) && topK > 0 ? topK : 4,
+      image: req.body.image || null,
+      mimeType: req.body.mimeType || "image/jpeg",
     },
     res
   );
