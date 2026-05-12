@@ -1,54 +1,18 @@
 require("dotenv").config();
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-
-async function searchWineOnWeb(wineName, winery, year) {
-  const serpApiKey = process.env.SERPAPI_KEY;
-  if (!serpApiKey) return [];
-
-  const query = [wineName, winery, year].filter(Boolean).join(" ").trim();
-  const params = new URLSearchParams({
-    engine: "google",
-    q: `${query} wine description tasting notes`,
-    num: "5",
-    api_key: serpApiKey,
-  });
-
-  try {
-    const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
-    if (!response.ok) return [];
-    const payload = await response.json();
-    const results = Array.isArray(payload.organic_results) ? payload.organic_results : [];
-    return results.slice(0, 5).map((r) => ({
-      title: r.title || "",
-      snippet: r.snippet || "",
-    }));
-  } catch {
-    return [];
-  }
-}
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 async function enrichWineWithAI({ name, winery, year, region, type }) {
-  const apiKey = String(process.env.GROQ_API_KEY || "").trim();
+  const apiKey = String(process.env.GOOGLE_API_KEY || "").trim();
   if (!apiKey) {
-    throw new Error("GROQ_API_KEY is not configured.");
+    throw new Error("GOOGLE_API_KEY is not configured.");
   }
 
-  const webResults = await searchWineOnWeb(name, winery, year);
-  const webContext = webResults.length
-    ? webResults.map((r) => `${r.title}: ${r.snippet}`).join("\n")
-    : "No web results available.";
-
-  const prompt = `You are a wine expert. Based on the wine information and web search results below,
-fill in all details about this wine and return a structured JSON object.
+  const prompt = `You are a wine expert. Search the web for information about this wine and return a detailed JSON object.
 
 Wine: ${[name, winery, year].filter(Boolean).join(", ")}
 ${region ? `Region: ${region}` : ""}
 ${type ? `Type hint: ${type}` : ""}
-
-Web search results:
-${webContext}
 
 Return a JSON object with exactly these fields (use null for unknown fields):
 {
@@ -71,32 +35,33 @@ Return a JSON object with exactly these fields (use null for unknown fields):
 }
 Only return the JSON, no explanation.`;
 
-  const response = await fetch(GROQ_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+      }),
+    }
+  );
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Groq enrich error ${response.status}: ${err}`);
+    throw new Error(`Gemini enrich error ${response.status}: ${err}`);
   }
 
   const payload = await response.json();
-  const content = payload.choices?.[0]?.message?.content || "{}";
+  const text = payload.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/({[\s\S]*})/);
+  const jsonStr = jsonMatch ? jsonMatch[1] : text;
 
   try {
-    return JSON.parse(content);
+    return JSON.parse(jsonStr.trim());
   } catch {
-    throw new Error("Could not parse AI response as JSON.");
+    throw new Error("Could not parse Gemini response as JSON.");
   }
 }
 
