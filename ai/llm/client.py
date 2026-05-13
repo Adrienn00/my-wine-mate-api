@@ -234,41 +234,56 @@ def call_llm_chat_stream(
         full_messages.append({"role": "system", "content": system_prompt})
     full_messages.extend(messages)
 
-    payload = {
-        "model": candidate_models[0] if candidate_models else "llama-3.3-70b-versatile",
-        "temperature": 0.4,
-        "stream": True,
-        "messages": full_messages,
-    }
-    data = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        api_url,
-        data=data,
-        method="POST",
-        headers={
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "User-Agent": "my-wine-mate/1.0",
-        },
-    )
+    last_error: Exception | None = None
 
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            for raw_line in response:
-                line = raw_line.decode("utf-8").rstrip("\n\r")
-                if not line.startswith("data: "):
-                    continue
-                data_str = line[6:]
-                if data_str.strip() == "[DONE]":
-                    return
-                try:
-                    chunk_data = json.loads(data_str)
-                    content = chunk_data["choices"][0]["delta"].get("content") or ""
-                    if content:
-                        yield content
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
-    except Exception as error:
-        log.warning("LLM stream error: %s", error)
-        raise RuntimeError(f"LLM stream request failed: {error}") from error
+    for model in candidate_models:
+        payload = {
+            "model": model,
+            "temperature": 0.4,
+            "stream": True,
+            "messages": full_messages,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            api_url,
+            data=data,
+            method="POST",
+            headers={
+                "Accept": "text/event-stream",
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "my-wine-mate/1.0",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8").rstrip("\n\r")
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        return
+                    try:
+                        chunk_data = json.loads(data_str)
+                        content = chunk_data["choices"][0]["delta"].get("content") or ""
+                        if content:
+                            yield content
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+            return
+        except urllib.error.HTTPError as error:
+            last_error = error
+            log.warning("LLM stream error on model %s: %s", model, error)
+            if error.code in {401, 403, 404, 429} and model != candidate_models[-1]:
+                continue
+            raise RuntimeError(f"LLM stream request failed: {error}") from error
+        except Exception as error:
+            last_error = error
+            log.warning("LLM stream error on model %s: %s", model, error)
+            if model != candidate_models[-1]:
+                continue
+            raise RuntimeError(f"LLM stream request failed: {error}") from error
+
+    raise RuntimeError(f"LLM stream request failed: {last_error}")

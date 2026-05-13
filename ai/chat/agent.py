@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
+import re
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -32,10 +35,14 @@ Rules:
 - If a user_id is mentioned in context, call get_user_preferences first to personalize your search.
 - After searching, explain in a friendly, conversational tone WHY each result fits the user's request.
 - Be specific: mention wine types, styles, flavors, or recipe ingredients from the actual results.
-- If search returns no results, say so honestly and suggest the user try different terms.
+- If a wine search returns no results, say so and suggest the user add wines to their collection.
+- If a recipe search returns no results, do NOT say "no results found" — instead suggest 2-3 food pairing ideas from your own knowledge that suit the wine's style, region, and flavors.
 - Respond in the same language the user writes in (English or Hungarian).
 - Keep responses warm, helpful, and concise — like a real sommelier at a wine bar.
-- If the conversation starts with a wine label scan result, use those details to search for the wine and suggest similar ones or food pairings."""
+- If the conversation starts with a wine label scan result:
+  1. FIRST call search_wines with the exact wine name and winery to check if it is already in the user's database. If found, show it prominently.
+  2. THEN search for similar wines (same region, type, or grape) to offer alternatives.
+  3. Also suggest food pairings relevant to the wine's style."""
 
 TOOLS = [
     {
@@ -194,44 +201,74 @@ def _generate_follow_ups(wines: list[dict], recipes: list[dict]) -> list[str]:
     return suggestions[:3]
 
 
+def _compress_image(image_b64: str, mime_type: str, max_px: int = 800) -> tuple[str, str]:
+    """Resize and re-encode image so it fits within max_px on the longest side."""
+    import io
+    try:
+        from PIL import Image
+    except ImportError:
+        return image_b64, mime_type
+
+    data = base64.b64decode(image_b64)
+    img = Image.open(io.BytesIO(data))
+    img.thumbnail((max_px, max_px), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=75)
+    return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
+
+
 def _call_groq_vision(image: str, mime_type: str) -> dict:
     api_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("GROQ_API_KEY not set")
+
+    image, mime_type = _compress_image(image, mime_type)
+
+    prompt_text = (
+        "You are a wine label reader. Extract information from this wine bottle label image.\n"
+        "Return a JSON object with exactly these fields (use null for fields you cannot determine):\n"
+        '{"name":"wine product name","winery":"producer or winery name","year":2019,'
+        '"type":"Red | White | Rosé | Sparkling | Dessert | Fortified",'
+        '"region":"region or appellation","country":"country of origin",'
+        '"grapeVarieties":["Merlot"],"alcohol":13.5,"rawText":"all text visible on label"}\n'
+        "Only return the JSON, no explanation."
+    )
     payload = json.dumps({
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
         "temperature": 0.1,
         "response_format": {"type": "json_object"},
-        "messages": [{"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image}"}},
-            {"type": "text", "text": (
-                "You are a wine label reader. Extract information from this wine bottle label image.\n"
-                "Return a JSON object with exactly these fields (use null for fields you cannot determine):\n"
-                '{"name":"wine product name","winery":"producer or winery name","year":2019,'
-                '"type":"Red | White | Rosé | Sparkling | Dessert | Fortified",'
-                '"region":"region or appellation","country":"country of origin",'
-                '"grapeVarieties":["Merlot"],"alcohol":13.5,"rawText":"all text visible on label"}\n'
-                "Only return the JSON, no explanation."
-            )},
-        ]}],
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image}"}},
+                {"type": "text", "text": prompt_text},
+            ],
+        }],
     }).encode("utf-8")
     req = urllib.request.Request(
         "https://api.groq.com/openai/v1/chat/completions",
         data=payload,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}", "User-Agent": "my-wine-mate/1.0"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
     try:
-        return json.loads(content)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Groq vision HTTP {exc.code}: {body[:300]}") from exc
+
+    text = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+    json_match = re.search(r"```json\s*([\s\S]*?)```", text) or re.search(r"(\{[\s\S]*\})", text)
+    json_str = json_match.group(1) if json_match else text
+    try:
+        return json.loads(json_str.strip())
     except json.JSONDecodeError:
-        return {"rawText": content}
+        return {"rawText": text}
 
 
-def _ocr_context_message(image: str, mime_type: str) -> str:
-    """Call Groq vision directly and return a text summary to inject into the conversation."""
+def _ocr_context_message(image: str, mime_type: str) -> tuple[bool, str]:
+    """Call Groq vision and return (success, text) to inject into the conversation."""
     try:
         result = _call_groq_vision(image, mime_type)
         parts = []
@@ -255,19 +292,30 @@ def _ocr_context_message(image: str, mime_type: str) -> str:
         if result.get("alcohol"):
             parts.append(f"Alcohol: {result['alcohol']}%")
         if parts:
-            return "📸 Wine label scanned. Identified: " + " | ".join(parts)
+            return True, "📸 Wine label scanned. Identified: " + " | ".join(parts)
         raw = result.get("rawText", "")
-        return f"📸 Wine label scanned. Raw text: {raw}" if raw else "📸 Wine label scanned but no details could be extracted."
+        if raw:
+            return True, f"📸 Wine label scanned. Raw text: {raw}"
+        return False, "📸 Wine label scanned but no details could be extracted. Please describe the wine in text."
     except Exception as exc:
-        log.warning("OCR via MCP failed: %s", exc)
-        return "📸 Wine label scan failed. Please describe the wine in text."
+        log.warning("OCR failed: %s", exc)
+        return False, f"📸 Wine label scan failed: {exc}"
 
 
 def run_agent(messages: list[dict], user_id: str | None, top_k: int, image: str | None = None, mime_type: str = "image/jpeg") -> dict[str, Any]:
     llm_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
 
     if image:
-        ocr_text = _ocr_context_message(image, mime_type)
+        ocr_ok, ocr_text = _ocr_context_message(image, mime_type)
+        if not ocr_ok:
+            return {
+                "mode": "llm_chat",
+                "source": "groq+mcp",
+                "reply": ocr_text,
+                "wines": [],
+                "recipes": [],
+                "followUpSuggestions": [],
+            }
         if llm_messages and llm_messages[-1]["role"] == "user":
             llm_messages[-1] = {
                 "role": "user",
@@ -284,11 +332,13 @@ def run_agent(messages: list[dict], user_id: str | None, top_k: int, image: str 
     collected_recipes: dict[str, dict] = {}
     response_msg: dict[str, Any] = {"role": "assistant", "content": ""}
 
+    # Phase 1: tool calling loop
     for _ in range(4):
         response_msg = call_llm_chat(llm_messages, system_prompt=system, tools=TOOLS)
 
         tool_calls = response_msg.get("tool_calls") or []
         if not tool_calls:
+            llm_messages.append(response_msg)
             break
 
         llm_messages.append(response_msg)
@@ -324,7 +374,10 @@ def run_agent(messages: list[dict], user_id: str | None, top_k: int, image: str 
                 "content": json.dumps(result, ensure_ascii=False),
             })
 
-    reply = response_msg.get("content") or ""
+    # Phase 2: one clean prose call without tools
+    final_msg = call_llm_chat(llm_messages, system_prompt=system, tools=None)
+    reply = (final_msg.get("content") or "").strip()
+
     wines = [_format_wine(w) for w in list(collected_wines.values())[:top_k]]
     recipes = [_format_recipe(r) for r in list(collected_recipes.values())[:top_k]]
 
@@ -348,9 +401,13 @@ def run_agent_stream(messages: list[dict], user_id: str | None, top_k: int, imag
     llm_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
 
     if image:
-        ocr_text = _ocr_context_message(image, mime_type)
+        ocr_ok, ocr_text = _ocr_context_message(image, mime_type)
         sys.stdout.write(json.dumps({"t": "ocr", "c": ocr_text}, ensure_ascii=False) + "\n")
         sys.stdout.flush()
+        if not ocr_ok:
+            sys.stdout.write(json.dumps({"t": "done", "wines": [], "recipes": [], "followUps": []}, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+            return
         if llm_messages and llm_messages[-1]["role"] == "user":
             llm_messages[-1] = {
                 "role": "user",
