@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -192,11 +194,46 @@ def _generate_follow_ups(wines: list[dict], recipes: list[dict]) -> list[str]:
     return suggestions[:3]
 
 
-def _ocr_context_message(image: str, mime_type: str) -> str:
-    """Run OCR via MCP and return a text summary to inject into the conversation."""
+def _call_groq_vision(image: str, mime_type: str) -> dict:
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set")
+    payload = json.dumps({
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"},
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image}"}},
+            {"type": "text", "text": (
+                "You are a wine label reader. Extract information from this wine bottle label image.\n"
+                "Return a JSON object with exactly these fields (use null for fields you cannot determine):\n"
+                '{"name":"wine product name","winery":"producer or winery name","year":2019,'
+                '"type":"Red | White | Rosé | Sparkling | Dessert | Fortified",'
+                '"region":"region or appellation","country":"country of origin",'
+                '"grapeVarieties":["Merlot"],"alcohol":13.5,"rawText":"all text visible on label"}\n'
+                "Only return the JSON, no explanation."
+            )},
+        ]}],
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
     try:
-        with MCPClient() as mcp:
-            result = mcp.call_tool("ocr_scan_label", {"base64_image": image, "mime_type": mime_type})
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {"rawText": content}
+
+
+def _ocr_context_message(image: str, mime_type: str) -> str:
+    """Call Groq vision directly and return a text summary to inject into the conversation."""
+    try:
+        result = _call_groq_vision(image, mime_type)
         parts = []
         if result.get("name"):
             parts.append(f"Name: {result['name']}")
