@@ -16,10 +16,24 @@ const userSchema = new mongoose.Schema(
     notifications: [
       {
         message: { type: String },
-        type: { type: String }, // approved | rejected
+        type: { type: String },
         link: { type: String },
         createdAt: { type: Date, default: Date.now },
         read: { type: Boolean, default: false },
+      },
+    ],
+    searchHistory: [
+      {
+        query: { type: String, required: true },
+        type: { type: String, enum: ["wine", "recipe", "general"], default: "general" },
+        searchedAt: { type: Date, default: Date.now },
+      },
+    ],
+    friends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    friendRequests: [
+      {
+        from: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        createdAt: { type: Date, default: Date.now },
       },
     ],
     preferences: {

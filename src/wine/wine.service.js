@@ -151,6 +151,32 @@ async function deleteWine(id) {
   return result.deletedCount > 0;
 }
 
+async function shareWineWithUser(wineId, senderUser, targetUsername) {
+  const wine = await Wine.findById(wineId);
+  if (!wine) throw new Error("wine not found");
+
+  const target = await User.findOne({ username: targetUsername }).select("_id notifications username");
+  if (!target) throw new Error("target user not found");
+
+  if (target._id.toString() === senderUser.id) {
+    throw new Error("cannot share with yourself");
+  }
+
+  const sender = await User.findById(senderUser.id).select("friends username");
+  const isFriend = sender.friends.some((fid) => fid.toString() === target._id.toString());
+  if (!isFriend) throw new Error("not a friend");
+
+  target.notifications.push({
+    message: `${sender.username || senderUser.email} shared a wine with you: "${wine.name}"`,
+    type: "share",
+    link: `/wine/${wine._id}`,
+  });
+
+  await target.save();
+
+  return { wineId: wine._id, wineName: wine.name, sharedWith: target.username };
+}
+
 module.exports = {
   getAllWines,
   getWineById,
@@ -159,4 +185,5 @@ module.exports = {
   deleteWine,
   addRating,
   deleteRating,
+  shareWineWithUser,
 };

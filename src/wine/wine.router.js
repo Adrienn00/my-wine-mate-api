@@ -12,6 +12,7 @@ router.post("/recommendations", authMiddleware, wineRecommendationController.rec
 router.post("/recommendations/split", authMiddleware, wineRecommendationController.recommendWinesSplit);
 
 router.post("/:id/rating", authMiddleware, wineController.newRating);
+router.post("/:id/share", authMiddleware, wineController.shareWine);
 router.delete("/:id/rating/:ratingId", authMiddleware, adminMiddleware, wineController.removeRating);
 router.get("/:id/live-offers", authMiddleware, wineController.getLiveOffers);
 
