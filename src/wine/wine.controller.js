@@ -196,6 +196,23 @@ async function ocrScan(req, res) {
   }
 }
 
+async function shareWine(req, res) {
+  try {
+    const { targetUsername } = req.body;
+    if (!targetUsername) {
+      return res.status(400).json({ message: "targetUsername is required" });
+    }
+    const result = await wineService.shareWineWithUser(req.params.id, req.user, targetUsername);
+    return res.status(200).json(result);
+  } catch (err) {
+    if (err.message === "wine not found") return res.status(404).json({ message: "Wine not found" });
+    if (err.message === "target user not found") return res.status(404).json({ message: "Target user not found" });
+    if (err.message === "cannot share with yourself") return res.status(400).json({ message: err.message });
+    if (err.message === "not a friend") return res.status(403).json({ message: "You can only share with friends." });
+    return res.status(500).json({ message: "Error while sharing wine", error: err.message });
+  }
+}
+
 async function aiEnrich(req, res) {
   try {
     const { name, winery, year, region, type } = req.body;
@@ -220,4 +237,5 @@ module.exports = {
   getLiveOffers,
   ocrScan,
   aiEnrich,
+  shareWine,
 };

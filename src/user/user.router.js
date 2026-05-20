@@ -24,4 +24,14 @@ router.delete("/favorite/recipes/:id", authMiddleware, userController.removeFavo
 router.delete("/notifications/:id", authMiddleware, userController.deleteNotification);
 
 router.put("/role/:id", authMiddleware, adminMiddleware, userController.updateUserRole);
+
+router.get("/friends", authMiddleware, userController.getFriends);
+router.post("/friends", authMiddleware, userController.addFriend);
+router.delete("/friends/:id", authMiddleware, userController.removeFriend);
+
+router.post("/search-history", authMiddleware, userController.addSearchEntry);
+router.get("/search-history", authMiddleware, userController.getSearchHistory);
+router.delete("/search-history", authMiddleware, userController.clearSearchHistory);
+router.get("/search-history/analytics", authMiddleware, userController.getSearchAnalytics);
+
 module.exports = router;

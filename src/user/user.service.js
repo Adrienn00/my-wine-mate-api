@@ -290,6 +290,82 @@ async function getSystemStats() {
   };
 }
 
+async function addFriend(userId, targetUsername) {
+  const target = await User.findOne({ username: targetUsername }).select("_id username");
+  if (!target) throw new Error("user not found");
+  if (target._id.toString() === userId) throw new Error("cannot add yourself");
+
+  await User.findByIdAndUpdate(userId, { $addToSet: { friends: target._id } });
+  return { _id: target._id, username: target.username };
+}
+
+async function removeFriend(userId, friendId) {
+  await User.findByIdAndUpdate(userId, { $pull: { friends: friendId } });
+}
+
+async function getFriends(userId) {
+  const user = await User.findById(userId).populate("friends", "username firstName lastName");
+  if (!user) throw new Error("User not found");
+  return user.friends;
+}
+
+const SEARCH_HISTORY_LIMIT = 100;
+
+async function addSearchEntry(userId, query, type = "general") {
+  const q = String(query || "").trim();
+  if (!q) return;
+
+  await User.findByIdAndUpdate(userId, {
+    $push: {
+      searchHistory: {
+        $each: [{ query: q, type, searchedAt: new Date() }],
+        $slice: -SEARCH_HISTORY_LIMIT,
+      },
+    },
+  });
+}
+
+async function getSearchHistory(userId) {
+  const user = await User.findById(userId).select("searchHistory");
+  if (!user) throw new Error("User not found");
+  return [...user.searchHistory].reverse();
+}
+
+async function clearSearchHistory(userId) {
+  await User.findByIdAndUpdate(userId, { $set: { searchHistory: [] } });
+}
+
+async function getSearchAnalytics(userId) {
+  const user = await User.findById(userId).select("searchHistory");
+  if (!user) throw new Error("User not found");
+
+  const history = user.searchHistory;
+
+  const queryFreq = {};
+  const byType = {};
+  const byDay = {};
+
+  for (const entry of history) {
+    const q = entry.query.toLowerCase();
+    queryFreq[q] = (queryFreq[q] || 0) + 1;
+    byType[entry.type] = (byType[entry.type] || 0) + 1;
+    const day = entry.searchedAt.toISOString().slice(0, 10);
+    byDay[day] = (byDay[day] || 0) + 1;
+  }
+
+  const topQueries = Object.entries(queryFreq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([query, count]) => ({ query, count }));
+
+  return {
+    totalSearches: history.length,
+    topQueries,
+    byType,
+    byDay,
+  };
+}
+
 module.exports = {
   registerUser,
   loginUser,
@@ -303,4 +379,11 @@ module.exports = {
   getAllUsers,
   updateUserRole,
   getSystemStats,
+  addSearchEntry,
+  getSearchHistory,
+  clearSearchHistory,
+  getSearchAnalytics,
+  addFriend,
+  removeFriend,
+  getFriends,
 };

@@ -147,6 +147,77 @@ async function getStats(req, res) {
   }
 }
 
+async function addSearchEntry(req, res) {
+  try {
+    const { query, type } = req.body;
+    if (!query || !String(query).trim()) {
+      return res.status(400).json({ message: "query is required" });
+    }
+    await userService.addSearchEntry(req.user.id, query, type);
+    return res.status(204).send();
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
+
+async function getSearchHistory(req, res) {
+  try {
+    const history = await userService.getSearchHistory(req.user.id);
+    return res.status(200).json(history);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
+
+async function clearSearchHistory(req, res) {
+  try {
+    await userService.clearSearchHistory(req.user.id);
+    return res.status(204).send();
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
+
+async function addFriend(req, res) {
+  try {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ message: "username is required" });
+    const friend = await userService.addFriend(req.user.id, username);
+    return res.status(200).json(friend);
+  } catch (err) {
+    if (err.message === "user not found") return res.status(404).json({ message: "User not found" });
+    if (err.message === "cannot add yourself") return res.status(400).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+async function removeFriend(req, res) {
+  try {
+    await userService.removeFriend(req.user.id, req.params.id);
+    return res.status(204).send();
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+async function getFriends(req, res) {
+  try {
+    const friends = await userService.getFriends(req.user.id);
+    return res.status(200).json(friends);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+}
+
+async function getSearchAnalytics(req, res) {
+  try {
+    const analytics = await userService.getSearchAnalytics(req.user.id);
+    return res.status(200).json(analytics);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -161,4 +232,11 @@ module.exports = {
   deleteNotification,
   updateUserRole,
   getStats,
+  addSearchEntry,
+  getSearchHistory,
+  clearSearchHistory,
+  getSearchAnalytics,
+  addFriend,
+  removeFriend,
+  getFriends,
 };
