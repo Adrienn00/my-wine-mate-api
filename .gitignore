@@ -1,5 +1,6 @@
 # Node.js dependencies
 node_modules/
+.venv/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -10,6 +11,7 @@ yarn-error.log*
 # dotenv environment variables file
 .env
 .env.*
+!.env.example
 
 # OS-specific files
 .DS_Store
@@ -29,6 +31,7 @@ coverage/
 # IDEs and editors
 .vscode/
 .idea/
+.codex
 *.sublime-project
 *.sublime-workspace
 
@@ -41,6 +44,10 @@ coverage/
 # Misc
 *.tgz
 *.swp
+*.pyc
+__pycache__/
+ai/artifacts/*
+!ai/artifacts/.gitkeep
 
 # TypeScript (if used)
 *.tsbuildinfo
