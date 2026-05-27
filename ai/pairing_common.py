@@ -17,7 +17,7 @@ ARTIFACTS_DIR = ROOT_DIR / "ai" / "artifacts"
 
 
 def load_environment() -> None:
-    load_dotenv(ROOT_DIR / ".env", override=True)
+    load_dotenv(ROOT_DIR / ".env", override=False)
 
 
 def mongo_database():

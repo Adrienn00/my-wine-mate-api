@@ -75,6 +75,8 @@ async function getAiRecommendationBundle(req, res) {
       });
     }
 
+    const userApiKey = req.headers["x-groq-api-key"] || null;
+
     const generalPromise = pairingService.getAiRecommendationsByEngine({
       recipeId,
       wineId,
@@ -82,6 +84,7 @@ async function getAiRecommendationBundle(req, res) {
       engine,
       userId,
       usePreferences: false,
+      userApiKey,
     });
 
     const preferencePromise =
@@ -93,6 +96,7 @@ async function getAiRecommendationBundle(req, res) {
             engine,
             userId,
             usePreferences: true,
+            userApiKey,
           })
         : Promise.resolve(null);
 

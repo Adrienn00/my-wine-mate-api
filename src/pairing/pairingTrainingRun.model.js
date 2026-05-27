@@ -9,7 +9,7 @@ const pairingTrainingRunSchema = new mongoose.Schema(
     },
     triggerSource: {
       type: String,
-      enum: ["admin", "system"],
+      enum: ["admin", "system", "auto"],
       default: "admin",
     },
     triggeredBy: {

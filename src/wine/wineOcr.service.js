@@ -3,10 +3,10 @@ require("dotenv").config();
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 
-async function extractWineLabelFromImage(base64Image, mimeType = "image/jpeg") {
-  const apiKey = String(process.env.GROQ_API_KEY || "").trim();
+async function extractWineLabelFromImage(base64Image, mimeType = "image/jpeg", userApiKey = null) {
+  const apiKey = (userApiKey || "").trim();
   if (!apiKey) {
-    throw new Error("GROQ_API_KEY is not configured.");
+    throw new Error("Groq API key required. Add your key in Profile → API Settings.");
   }
 
   const response = await fetch(GROQ_API_URL, {

@@ -40,16 +40,12 @@ def serialize_recipe_candidate(recipe: dict[str, Any], feedback_stats: dict[str,
         "recipe_id": str(recipe["_id"]),
         "recipe_name": recipe.get("name"),
         "categories": recipe.get("recipeCategories", []),
-        "ingredients": recipe.get("ingredients", [])[:15],
         "main_ingredients": signals.get("main_ingredients", []),
         "dish_types": signals.get("dish_types", []),
         "meat_types": signals.get("meat_types", []),
-        "cooking_methods": signals.get("cooking_methods", []),
-        "textures": signals.get("textures", []),
-        "sauce_types": signals.get("sauce_types", []),
         "spice_level": signals.get("spice_level"),
         "sweetness": signals.get("sweetness"),
-        "winePairingHints": recipe.get("winePairingHints", []),
+        "winePairingHints": recipe.get("winePairingHints", [])[:5],
     }
     feedback = _serialize_feedback_stats(feedback_stats)
     if feedback:
@@ -64,13 +60,9 @@ def serialize_wine_candidate(wine: dict[str, Any], feedback_stats: dict[str, Any
         "wine_name": wine.get("name"),
         "type": wine.get("type"),
         "style": wine.get("style"),
-        "foodPairingHints": wine.get("foodPairingHints", []),
-        "grapeVarieties": wine.get("grapeVarieties", []),
-        "flavorProfiles": wine.get("flavorProfiles", []),
+        "foodPairingHints": wine.get("foodPairingHints", [])[:5],
+        "flavorProfiles": wine.get("flavorProfiles", [])[:5],
         "sweetness": signals.get("sweetness"),
-        "body": signals.get("body"),
-        "acidity": signals.get("acidity"),
-        "tannin": signals.get("tannin"),
         "pairing_targets": signals.get("pairing_targets", []),
     }
     feedback = _serialize_feedback_stats(feedback_stats)

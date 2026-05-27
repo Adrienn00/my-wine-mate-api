@@ -15,6 +15,7 @@ async function chat(req, res) {
       topK: Number.isFinite(topK) && topK > 0 ? topK : 4,
       image: req.body.image || null,
       mimeType: req.body.mimeType || "image/jpeg",
+      groqApiKey: req.headers["x-groq-api-key"] || null,
     });
 
     return res.status(200).json(result);
@@ -43,6 +44,7 @@ function chatStream(req, res) {
       topK: Number.isFinite(topK) && topK > 0 ? topK : 4,
       image: req.body.image || null,
       mimeType: req.body.mimeType || "image/jpeg",
+      groqApiKey: req.headers["x-groq-api-key"] || null,
     },
     res
   );

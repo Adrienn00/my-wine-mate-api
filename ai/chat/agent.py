@@ -24,25 +24,48 @@ from mcp.client import MCPClient
 
 log = logging.getLogger(__name__)
 
+LARGE_MODEL = "llama-3.3-70b-versatile"
+SMALL_MODEL = "llama-3.1-8b-instant"
+
+_COMPLEX_KEYWORDS = {
+    "recommend", "suggest", "find", "search", "look up", "show me",
+    "pair", "pairing", "goes with", "match", "compare", "difference",
+    "explain", "tell me about", "what wine", "which wine", "best wine",
+    "similar", "alternative", "based on", "prefer", "preference",
+    "ajánl", "keres", "talál", "párosít", "hasonló", "magyarázz",
+}
+
+def _pick_tool_model(messages: list[dict]) -> str:
+    """Use small model for short greetings/knowledge questions, large for everything that likely needs tool calls."""
+    last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    if not isinstance(last_user, str):
+        return LARGE_MODEL
+    words = last_user.lower().split()
+    if len(words) > 25:
+        return LARGE_MODEL
+    if any(kw in last_user.lower() for kw in _COMPLEX_KEYWORDS):
+        return LARGE_MODEL
+    return SMALL_MODEL
+
 SYSTEM_PROMPT = """You are a friendly, knowledgeable sommelier assistant for My Wine Mate, a personal wine and recipe app.
 
-Your role is to help users discover wines and recipes from THEIR OWN database.
+Your role is to help users discover wines and recipes from THEIR OWN database, and to inform them about any wine they ask about or scan.
 Use the provided search tools to find relevant wines and recipes, then explain your recommendations naturally.
 
 Rules:
-- ONLY recommend wines and recipes found via search tools. Never invent or fabricate items.
-- Use search_wines to find wines, search_recipes to find recipes.
+- Use search_wines to find wines, search_recipes to find recipes from the user's collection.
 - If a user_id is mentioned in context, call get_user_preferences first to personalize your search.
 - After searching, explain in a friendly, conversational tone WHY each result fits the user's request.
 - Be specific: mention wine types, styles, flavors, or recipe ingredients from the actual results.
-- If a wine search returns no results, say so and suggest the user add wines to their collection.
-- If a recipe search returns no results, do NOT say "no results found" — instead suggest 2-3 food pairing ideas from your own knowledge that suit the wine's style, region, and flavors.
+- If a recipe search returns no results, suggest 2-3 food pairing ideas from your own knowledge that suit the wine's style.
 - Respond in the same language the user writes in (English or Hungarian).
 - Keep responses warm, helpful, and concise — like a real sommelier at a wine bar.
 - If the conversation starts with a wine label scan result:
-  1. FIRST call search_wines with the exact wine name and winery to check if it is already in the user's database. If found, show it prominently.
-  2. THEN search for similar wines (same region, type, or grape) to offer alternatives.
-  3. Also suggest food pairings relevant to the wine's style."""
+  1. FIRST call search_wines with the exact wine name and winery to check if it is in the user's database. If found, show it prominently.
+  2. If NOT found in the database, call enrich_wine_web to look up detailed information about this wine from your knowledge (characteristics, flavor profile, origin, food pairings).
+  3. THEN search for similar wines (same region, type, or grape variety) to offer alternatives from the database.
+  4. Summarize what you found: the info about the scanned wine + similar wines from the collection.
+- If the user asks about a specific wine by name that is not in the database, use enrich_wine_web to look it up."""
 
 TOOLS = [
     {
@@ -145,7 +168,63 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "enrich_wine_web",
+            "description": "Look up detailed information about a specific wine from expert knowledge. Use this when the wine is NOT found in the user's database, or when the user asks about a wine by name. Returns characteristics, flavor profile, food pairings, and origin.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Wine product name"},
+                    "winery": {"type": "string", "description": "Producer or winery name"},
+                    "year": {"type": "integer", "description": "Vintage year"},
+                    "region": {"type": "string", "description": "Region or appellation"},
+                    "type": {"type": "string", "description": "Wine type: Red, White, Rosé, Sparkling, Dessert"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
+
+
+def _call_groq_enrich(name: str, winery: str | None = None, year: int | None = None, region: str | None = None, wine_type: str | None = None) -> dict:
+    api_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set")
+    parts = [p for p in [name, winery, str(year) if year else None, region] if p]
+    prompt = (
+        f"You are a master sommelier. Provide complete, vivid details about this wine — infer plausible characteristics from its name, origin, and type if you lack specific knowledge. Never say 'limited information' or 'unknown'. Wine: {', '.join(parts)}"
+        + (f" (type: {wine_type})" if wine_type else "")
+        + """. Return a JSON object: {"name":"full wine name","winery":"producer","description":"2-3 vivid expert sentences","type":"Red|White|Rosé|Sparkling|Dessert|Fortified","style":"e.g. Full-bodied","flavorProfiles":["Cherry","Vanilla"],"origin":{"country":"country","region":"region"},"grapeVarieties":["variety"],"year":2019,"alcohol":13.5,"priceRange":"€10-20","foodPairingHints":["Grilled lamb","Pasta"]}. Only return JSON."""
+    )
+    payload = json.dumps({
+        "model": "llama-3.3-70b-versatile",
+        "temperature": 0.4,
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": "You are a master sommelier with encyclopedic wine knowledge. Always respond with valid JSON only. Never admit ignorance — infer plausible expert details from context."},
+            {"role": "user", "content": prompt},
+        ],
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Groq enrich HTTP {exc.code}: {body[:200]}") from exc
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {"description": content[:500]}
 
 
 def _format_wine(wine: dict[str, Any]) -> dict[str, Any]:
@@ -332,9 +411,11 @@ def run_agent(messages: list[dict], user_id: str | None, top_k: int, image: str 
     collected_recipes: dict[str, dict] = {}
     response_msg: dict[str, Any] = {"role": "assistant", "content": ""}
 
+    tool_model = _pick_tool_model(llm_messages)
+
     # Phase 1: tool calling loop
     for _ in range(4):
-        response_msg = call_llm_chat(llm_messages, system_prompt=system, tools=TOOLS)
+        response_msg = call_llm_chat(llm_messages, system_prompt=system, tools=TOOLS, model_override=tool_model)
 
         tool_calls = response_msg.get("tool_calls") or []
         if not tool_calls:
@@ -350,12 +431,25 @@ def run_agent(messages: list[dict], user_id: str | None, top_k: int, image: str 
             except (json.JSONDecodeError, KeyError):
                 fn_args = {}
 
-            try:
-                with MCPClient() as mcp:
-                    result = mcp.call_tool(fn_name, fn_args)
-            except Exception as exc:
-                log.warning("MCP tool %s failed: %s", fn_name, exc)
-                result = {"error": str(exc), "results": []}
+            if fn_name == "enrich_wine_web":
+                try:
+                    result = _call_groq_enrich(
+                        name=fn_args.get("name", ""),
+                        winery=fn_args.get("winery"),
+                        year=fn_args.get("year"),
+                        region=fn_args.get("region"),
+                        wine_type=fn_args.get("type"),
+                    )
+                except Exception as exc:
+                    log.warning("Groq enrich failed: %s", exc)
+                    result = {"error": str(exc)}
+            else:
+                try:
+                    with MCPClient() as mcp:
+                        result = mcp.call_tool(fn_name, fn_args)
+                except Exception as exc:
+                    log.warning("MCP tool %s failed: %s", fn_name, exc)
+                    result = {"error": str(exc), "results": []}
 
             if fn_name == "search_wines":
                 for wine in result.get("results", []):
@@ -374,8 +468,8 @@ def run_agent(messages: list[dict], user_id: str | None, top_k: int, image: str 
                 "content": json.dumps(result, ensure_ascii=False),
             })
 
-    # Phase 2: one clean prose call without tools
-    final_msg = call_llm_chat(llm_messages, system_prompt=system, tools=None)
+    # Phase 2: one clean prose call without tools (small model is enough for presenting results)
+    final_msg = call_llm_chat(llm_messages, system_prompt=system, tools=None, model_override=SMALL_MODEL)
     reply = (final_msg.get("content") or "").strip()
 
     wines = [_format_wine(w) for w in list(collected_wines.values())[:top_k]]
@@ -423,9 +517,11 @@ def run_agent_stream(messages: list[dict], user_id: str | None, top_k: int, imag
     collected_wines: dict[str, dict] = {}
     collected_recipes: dict[str, dict] = {}
 
+    tool_model = _pick_tool_model(llm_messages)
+
     # Phase 1: tool-call loop (synchronous, max 3 iterations)
     for _ in range(3):
-        response_msg = call_llm_chat(llm_messages, system_prompt=system, tools=TOOLS)
+        response_msg = call_llm_chat(llm_messages, system_prompt=system, tools=TOOLS, model_override=tool_model)
         tool_calls = response_msg.get("tool_calls") or []
         if not tool_calls:
             break
@@ -439,12 +535,25 @@ def run_agent_stream(messages: list[dict], user_id: str | None, top_k: int, imag
             except (json.JSONDecodeError, KeyError):
                 fn_args = {}
 
-            try:
-                with MCPClient() as mcp:
-                    result = mcp.call_tool(fn_name, fn_args)
-            except Exception as exc:
-                log.warning("MCP tool %s failed: %s", fn_name, exc)
-                result = {"error": str(exc), "results": []}
+            if fn_name == "enrich_wine_web":
+                try:
+                    result = _call_groq_enrich(
+                        name=fn_args.get("name", ""),
+                        winery=fn_args.get("winery"),
+                        year=fn_args.get("year"),
+                        region=fn_args.get("region"),
+                        wine_type=fn_args.get("type"),
+                    )
+                except Exception as exc:
+                    log.warning("Groq enrich failed: %s", exc)
+                    result = {"error": str(exc)}
+            else:
+                try:
+                    with MCPClient() as mcp:
+                        result = mcp.call_tool(fn_name, fn_args)
+                except Exception as exc:
+                    log.warning("MCP tool %s failed: %s", fn_name, exc)
+                    result = {"error": str(exc), "results": []}
 
             if fn_name == "search_wines":
                 for wine in result.get("results", []):
@@ -463,8 +572,8 @@ def run_agent_stream(messages: list[dict], user_id: str | None, top_k: int, imag
                 "content": json.dumps(result, ensure_ascii=False),
             })
 
-    # Phase 2: stream the final text response (no tools → forced prose)
-    for chunk in call_llm_chat_stream(llm_messages, system_prompt=system):
+    # Phase 2: stream the final text response (small model sufficient for presenting results)
+    for chunk in call_llm_chat_stream(llm_messages, system_prompt=system, model_override=SMALL_MODEL):
         sys.stdout.write(json.dumps({"t": "chunk", "c": chunk}, ensure_ascii=False) + "\n")
         sys.stdout.flush()
 
@@ -495,6 +604,13 @@ def main() -> None:
     stream = bool(payload.get("stream", False))
     image = payload.get("image") or None
     mime_type = payload.get("mimeType") or "image/jpeg"
+
+    groq_api_key = (payload.get("groqApiKey") or "").strip()
+    if groq_api_key:
+        os.environ["GROQ_API_KEY"] = groq_api_key
+    else:
+        print(json.dumps({"error": "Groq API key required. Add your key in Profile → API Settings."}))
+        sys.exit(1)
 
     if not messages:
         print(json.dumps({"error": "No messages provided."}))

@@ -110,8 +110,8 @@ function normalizeEngine(engine) {
   throw new Error("Invalid recommendation engine.");
 }
 
-function isLlmConfigured() {
-  return Boolean(String(process.env.GROQ_API_KEY || "").trim());
+function isLlmConfigured(userApiKey = null) {
+  return Boolean((userApiKey || "").trim() || String(process.env.GROQ_API_KEY || "").trim());
 }
 
 function recommendationMetadata(engine, source = "") {
@@ -313,10 +313,11 @@ async function getLlmRecommendations({
   recipeId,
   wineId,
   topK = 5,
-  maxCandidates = 25,
+  maxCandidates = 12,
   userId = null,
   usePreferences = false,
   captureTrainingData = false,
+  userApiKey = null,
 }) {
   const startedAt = nowMs();
   if (Boolean(recipeId) === Boolean(wineId)) {
@@ -340,10 +341,12 @@ async function getLlmRecommendations({
     args.push("--use-preferences", "--user-id", String(userId));
   }
 
+  const resolvedKey = (userApiKey || "").trim() || process.env.GROQ_API_KEY || "";
   const pythonStartedAt = nowMs();
   const { stdout, stderr } = await execFileAsync(pythonExecutable, args, {
     cwd: BACKEND_ROOT,
     timeout: 120000,
+    env: { ...process.env, GROQ_API_KEY: resolvedKey },
   });
   const pythonDurationMs = nowMs() - pythonStartedAt;
 
@@ -380,6 +383,7 @@ async function getAiRecommendationsByEngine({
   engine = "auto",
   userId = null,
   usePreferences = false,
+  userApiKey = null,
 }) {
   const normalizedEngine = normalizeEngine(engine);
 
@@ -388,10 +392,10 @@ async function getAiRecommendationsByEngine({
   }
 
   if (normalizedEngine === "llm") {
-    return getLlmRecommendations({ recipeId, wineId, topK, userId, usePreferences });
+    return getLlmRecommendations({ recipeId, wineId, topK, userId, usePreferences, userApiKey });
   }
 
-  if (isLlmConfigured()) {
+  if (isLlmConfigured(userApiKey)) {
     try {
       return await getLlmRecommendations({
         recipeId,
@@ -400,6 +404,7 @@ async function getAiRecommendationsByEngine({
         userId,
         usePreferences,
         captureTrainingData: !usePreferences,
+        userApiKey,
       });
     } catch (error) {
       console.warn("LLM pairing recommendation failed, falling back to XGBoost:", error.message);

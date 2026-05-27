@@ -52,15 +52,15 @@ function runPythonAgent(input) {
   });
 }
 
-async function runConversationalChat({ messages, userId = null, topK = 4, image = null, mimeType = "image/jpeg" }) {
+async function runConversationalChat({ messages, userId = null, topK = 4, image = null, mimeType = "image/jpeg", groqApiKey = null }) {
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new Error("Pass at least one message.");
   }
 
-  return runPythonAgent({ messages, userId, topK, image, mimeType });
+  return runPythonAgent({ messages, userId, topK, image, mimeType, groqApiKey });
 }
 
-function streamConversationalChat({ messages, userId = null, topK = 4, image = null, mimeType = "image/jpeg" }, res) {
+function streamConversationalChat({ messages, userId = null, topK = 4, image = null, mimeType = "image/jpeg", groqApiKey = null }, res) {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -123,7 +123,7 @@ function streamConversationalChat({ messages, userId = null, topK = 4, image = n
     }
   });
 
-  proc.stdin.write(JSON.stringify({ messages, userId, topK, stream: true, image, mimeType }));
+  proc.stdin.write(JSON.stringify({ messages, userId, topK, stream: true, image, mimeType, groqApiKey }));
   proc.stdin.end();
 }
 

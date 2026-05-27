@@ -189,7 +189,8 @@ async function ocrScan(req, res) {
     if (!image) {
       return res.status(400).json({ message: "Missing image field (base64 string)." });
     }
-    const result = await wineOcrService.extractWineLabelFromImage(image, mimeType || "image/jpeg");
+    const userApiKey = req.headers["x-groq-api-key"] || null;
+    const result = await wineOcrService.extractWineLabelFromImage(image, mimeType || "image/jpeg", userApiKey);
     return res.status(200).json(result);
   } catch (err) {
     return res.status(500).json({ message: "OCR failed.", error: err.message });
@@ -219,7 +220,8 @@ async function aiEnrich(req, res) {
     if (!name) {
       return res.status(400).json({ message: "Missing required field: name." });
     }
-    const result = await wineEnrichService.enrichWineWithAI({ name, winery, year, region, type });
+    const userApiKey = req.headers["x-groq-api-key"] || null;
+    const result = await wineEnrichService.enrichWineWithAI({ name, winery, year, region, type }, userApiKey);
     return res.status(200).json(result);
   } catch (err) {
     return res.status(500).json({ message: "AI enrich failed.", error: err.message });

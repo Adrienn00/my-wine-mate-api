@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--user-id", type=str, default=None)
     parser.add_argument("--use-preferences", action="store_true")
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--max-candidates", type=int, default=25)
+    parser.add_argument("--max-candidates", type=int, default=12)
     return parser.parse_args()
 
 

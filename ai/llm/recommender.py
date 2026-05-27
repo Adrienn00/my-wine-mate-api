@@ -5,6 +5,8 @@ from typing import Any
 
 from pairing_common import extract_recipe_signals, extract_wine_signals, mongo_database
 from llm.client import call_llm
+
+RECOMMEND_MODEL = "llama-3.1-8b-instant"
 from llm.common import parse_object_id
 from llm.feedback import (
     build_feedback_lookup_for_recipe,
@@ -201,7 +203,7 @@ def recommend_for_recipe(recipe_id: str, top_k: int, max_candidates: int, prefer
     rerank_ms = round((time.perf_counter() - rerank_started_at) * 1000, 2)
     try:
         llm_started_at = time.perf_counter()
-        llm_response = call_llm(build_recipe_to_wine_prompt(recipe, candidates, preferences, feedback_lookup))
+        llm_response = call_llm(build_recipe_to_wine_prompt(recipe, candidates, preferences, feedback_lookup), model_override=RECOMMEND_MODEL)
         llm_ms = round((time.perf_counter() - llm_started_at) * 1000, 2)
         results = parse_recipe_to_wine_results(llm_response, top_k)
         results = _attach_feedback_metadata(results, "wine_id", feedback_lookup)
@@ -248,7 +250,7 @@ def recommend_for_wine(wine_id: str, top_k: int, max_candidates: int, preference
     rerank_ms = round((time.perf_counter() - rerank_started_at) * 1000, 2)
     try:
         llm_started_at = time.perf_counter()
-        llm_response = call_llm(build_wine_to_recipe_prompt(wine, candidates, preferences, feedback_lookup))
+        llm_response = call_llm(build_wine_to_recipe_prompt(wine, candidates, preferences, feedback_lookup), model_override=RECOMMEND_MODEL)
         llm_ms = round((time.perf_counter() - llm_started_at) * 1000, 2)
         results = parse_wine_to_recipe_results(llm_response, top_k)
         results = _attach_feedback_metadata(results, "recipe_id", feedback_lookup)

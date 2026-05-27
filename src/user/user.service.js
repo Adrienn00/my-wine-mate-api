@@ -67,6 +67,7 @@ async function loginUser({ email, password }) {
     username: user.username,
     email: user.email,
     isAdmin: user.isAdmin,
+    img: user.img || null,
     favoriteWines: user.favoriteWines,
     favoriteRecipes: user.favoriteRecipes,
     token,

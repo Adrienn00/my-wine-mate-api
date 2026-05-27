@@ -17,13 +17,13 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 
 
-def call_llm(prompt: str, system_prompt: str | None = None) -> dict:
+def call_llm(prompt: str, system_prompt: str | None = None, model_override: str | None = None) -> dict:
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("Missing environment variable: GROQ_API_KEY")
 
     api_url = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions").strip()
-    preferred_model = os.getenv("GROQ_MODEL", "").strip()
+    preferred_model = (model_override or os.getenv("GROQ_MODEL", "")).strip()
     fallback_models_raw = os.getenv(
         "GROQ_FALLBACK_MODELS", "llama-3.3-70b-versatile,llama-3.1-8b-instant"
     )
@@ -125,6 +125,7 @@ def call_llm_chat(
     messages: list[dict],
     system_prompt: str | None = None,
     tools: list[dict] | None = None,
+    model_override: str | None = None,
 ) -> dict:
     """
     Multi-turn chat call with optional tool calling.
@@ -137,7 +138,7 @@ def call_llm_chat(
         raise RuntimeError("Missing environment variable: GROQ_API_KEY")
 
     api_url = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions").strip()
-    preferred_model = os.getenv("GROQ_MODEL", "").strip()
+    preferred_model = (model_override or os.getenv("GROQ_MODEL", "")).strip()
     fallback_models_raw = os.getenv("GROQ_FALLBACK_MODELS", "llama-3.3-70b-versatile,llama-3.1-8b-instant")
     candidate_models = []
     for model_name in [preferred_model, *fallback_models_raw.split(",")]:
@@ -211,6 +212,7 @@ def call_llm_chat(
 def call_llm_chat_stream(
     messages: list[dict],
     system_prompt: str | None = None,
+    model_override: str | None = None,
 ):
     """
     Generator that yields content string chunks from a streaming LLM call.
@@ -221,7 +223,7 @@ def call_llm_chat_stream(
         raise RuntimeError("Missing environment variable: GROQ_API_KEY")
 
     api_url = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions").strip()
-    preferred_model = os.getenv("GROQ_MODEL", "").strip()
+    preferred_model = (model_override or os.getenv("GROQ_MODEL", "")).strip()
     fallback_models_raw = os.getenv("GROQ_FALLBACK_MODELS", "llama-3.3-70b-versatile,llama-3.1-8b-instant")
     candidate_models = []
     for model_name in [preferred_model, *fallback_models_raw.split(",")]:
