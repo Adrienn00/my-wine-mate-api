@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
     "dev": "node index.js",
     "ai:train": ".venv/bin/python ai/xgboost/train_pairing_model.py",
     "ai:train-from-dataset": ".venv/bin/python ai/xgboost/train_pairing_model.py --use-existing-dataset",
