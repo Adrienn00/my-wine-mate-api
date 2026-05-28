@@ -1,4 +1,6 @@
 require("dotenv").config();
+console.log("[startup] MONGO_URI:", process.env.MONGO_URI ? "SET" : "UNDEFINED");
+console.log("[startup] PORT:", process.env.PORT);
 const express = require("express");
 const cors = require("cors");
 const wineRoutes = require("./src/wine/wine.router.js");
