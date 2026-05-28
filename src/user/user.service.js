@@ -36,7 +36,11 @@ function generateToken(user) {
 async function registerUser(userData) {
   const userExist = await User.findOne({ $or: [{ email: userData.email }, { username: userData.username }] });
   if (userExist) {
-    throw new Error("This username or email is already in use");
+    if (!userExist.isVerified && userExist.verificationToken) {
+      await User.deleteOne({ _id: userExist._id });
+    } else {
+      throw new Error("This username or email is already in use");
+    }
   }
   const saltRounds = 10;
   const hashedPassword = await bcrypt.hash(userData.password, saltRounds);
