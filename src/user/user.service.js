@@ -1,7 +1,9 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 const User = require("./user.model.js");
 const bcrypt = require("bcrypt");
 const Wine = require("../wine/wine.model.js");
@@ -12,6 +14,12 @@ const PairingTrainingRun = require("../pairing/pairingTrainingRun.model.js");
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 const TRAINING_METRICS_PATH = path.join(__dirname, "../../ai/artifacts/training_metrics.json");
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://my-wine-mate.vercel.app";
+
+const mailer = nodemailer.createTransport({
+  service: "gmail",
+  auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+});
 
 function generateToken(user) {
   return jwt.sign(
@@ -32,21 +40,32 @@ async function registerUser(userData) {
   }
   const saltRounds = 10;
   const hashedPassword = await bcrypt.hash(userData.password, saltRounds);
+  const verificationToken = crypto.randomBytes(32).toString("hex");
 
   const newUser = new User({
     ...userData,
     password: hashedPassword,
+    verificationToken,
+    verificationTokenExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
   });
 
   const savedUser = await newUser.save();
-  const token = generateToken(savedUser);
 
-  return {
-    id: savedUser._id,
-    username: savedUser.username,
-    email: savedUser.email,
-    token,
-  };
+  const verifyUrl = `${FRONTEND_URL}/verify/${verificationToken}`;
+  await mailer.sendMail({
+    from: `"MyWineMate" <${process.env.MAIL_USER}>`,
+    to: savedUser.email,
+    subject: "Confirm your MyWineMate account",
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:auto">
+        <h2 style="color:#5d1f32">Welcome to MyWineMate 🍷</h2>
+        <p>Hi <strong>${savedUser.username}</strong>, click the button below to verify your email address. The link expires in 24 hours.</p>
+        <a href="${verifyUrl}" style="display:inline-block;margin:20px 0;padding:12px 28px;background:#5d1f32;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Verify Email</a>
+        <p style="color:#888;font-size:13px">Or copy this link: ${verifyUrl}</p>
+      </div>`,
+  });
+
+  return { email: savedUser.email };
 }
 
 async function loginUser({ email, password }) {
@@ -55,6 +74,10 @@ async function loginUser({ email, password }) {
 
   if (!user) {
     throw new Error("Email is incorrect");
+  }
+
+  if (!user.isVerified) {
+    throw new Error("Please verify your email before logging in.");
   }
 
   const isMatch = await bcrypt.compare(password, user.password);
@@ -367,9 +390,22 @@ async function getSearchAnalytics(userId) {
   };
 }
 
+async function verifyEmail(token) {
+  const user = await User.findOne({
+    verificationToken: token,
+    verificationTokenExpires: { $gt: new Date() },
+  });
+  if (!user) throw new Error("Invalid or expired verification link.");
+  user.isVerified = true;
+  user.verificationToken = undefined;
+  user.verificationTokenExpires = undefined;
+  await user.save();
+}
+
 module.exports = {
   registerUser,
   loginUser,
+  verifyEmail,
   addFavoriteWine,
   removeFavoriteWine,
   addFavoriteRecipe,

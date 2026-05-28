@@ -3,8 +3,17 @@ const User = require("./user.model.js");
 
 async function register(req, res) {
   try {
-    const user = await userService.registerUser(req.body);
-    return res.status(201).json(user);
+    const result = await userService.registerUser(req.body);
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+}
+
+async function verifyEmail(req, res) {
+  try {
+    await userService.verifyEmail(req.params.token);
+    return res.status(200).json({ message: "Email verified successfully." });
   } catch (error) {
     return res.status(400).json({ message: error.message });
   }
@@ -239,4 +248,5 @@ module.exports = {
   addFriend,
   removeFriend,
   getFriends,
+  verifyEmail,
 };

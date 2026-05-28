@@ -12,6 +12,9 @@ const userSchema = new mongoose.Schema(
     img: { type: String },
     password: { type: String, required: true },
     isAdmin: { type: Boolean, default: false },
+    isVerified: { type: Boolean, default: false },
+    verificationToken: { type: String },
+    verificationTokenExpires: { type: Date },
     favoriteWines: [{ type: mongoose.Schema.Types.ObjectId, ref: "Wine" }],
     favoriteRecipes: [{ type: mongoose.Schema.Types.ObjectId, ref: "Recipe" }],
     notifications: [
