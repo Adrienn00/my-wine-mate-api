@@ -52,18 +52,23 @@ async function registerUser(userData) {
   const savedUser = await newUser.save();
 
   const verifyUrl = `${FRONTEND_URL}/verify/${verificationToken}`;
-  await mailer.sendMail({
-    from: `"MyWineMate" <${process.env.MAIL_USER}>`,
-    to: savedUser.email,
-    subject: "Confirm your MyWineMate account",
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:auto">
-        <h2 style="color:#5d1f32">Welcome to MyWineMate 🍷</h2>
-        <p>Hi <strong>${savedUser.username}</strong>, click the button below to verify your email address. The link expires in 24 hours.</p>
-        <a href="${verifyUrl}" style="display:inline-block;margin:20px 0;padding:12px 28px;background:#5d1f32;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Verify Email</a>
-        <p style="color:#888;font-size:13px">Or copy this link: ${verifyUrl}</p>
-      </div>`,
-  });
+  try {
+    await mailer.sendMail({
+      from: `"MyWineMate" <${process.env.MAIL_USER}>`,
+      to: savedUser.email,
+      subject: "Confirm your MyWineMate account",
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto">
+          <h2 style="color:#5d1f32">Welcome to MyWineMate 🍷</h2>
+          <p>Hi <strong>${savedUser.username}</strong>, click the button below to verify your email address. The link expires in 24 hours.</p>
+          <a href="${verifyUrl}" style="display:inline-block;margin:20px 0;padding:12px 28px;background:#5d1f32;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Verify Email</a>
+          <p style="color:#888;font-size:13px">Or copy this link: ${verifyUrl}</p>
+        </div>`,
+    });
+  } catch (mailErr) {
+    await User.deleteOne({ _id: savedUser._id });
+    throw new Error("Could not send verification email. Please check the address and try again.");
+  }
 
   return { email: savedUser.email };
 }
@@ -76,7 +81,7 @@ async function loginUser({ email, password }) {
     throw new Error("Email is incorrect");
   }
 
-  if (!user.isVerified) {
+  if (!user.isVerified && user.verificationToken) {
     throw new Error("Please verify your email before logging in.");
   }
 
