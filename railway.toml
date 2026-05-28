@@ -1,0 +1,5 @@
+[build]
+buildCommand = "npm install && pip install -r ai/requirements.txt"
+
+[deploy]
+startCommand = "node index.js"
