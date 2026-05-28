@@ -70,6 +70,7 @@ async function registerUser(userData) {
         </div>`,
     });
   } catch (mailErr) {
+    console.error("[mailer] Failed to send verification email:", mailErr.message);
     await User.deleteOne({ _id: savedUser._id });
     throw new Error("Could not send verification email. Please check the address and try again.");
   }
