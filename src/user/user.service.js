@@ -17,7 +17,9 @@ const TRAINING_METRICS_PATH = path.join(__dirname, "../../ai/artifacts/training_
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://my-wine-mate.vercel.app";
 
 const mailer = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
   auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
 });
 
