@@ -48,12 +48,21 @@ function generateToken(user) {
 }
 
 async function registerUser(userData) {
-  const userExist = await User.findOne({ $or: [{ email: userData.email }, { username: userData.username }] });
-  if (userExist) {
-    if (!userExist.isVerified && userExist.verificationToken) {
-      await User.deleteOne({ _id: userExist._id });
+  const byEmail = await User.findOne({ email: userData.email });
+  if (byEmail) {
+    if (!byEmail.isVerified) {
+      await User.deleteOne({ _id: byEmail._id });
     } else {
-      throw new Error("This username or email is already in use");
+      throw new Error("This email is already in use");
+    }
+  }
+
+  const byUsername = await User.findOne({ username: userData.username });
+  if (byUsername) {
+    if (!byUsername.isVerified) {
+      await User.deleteOne({ _id: byUsername._id });
+    } else {
+      throw new Error("This username is already in use");
     }
   }
   const saltRounds = 10;
