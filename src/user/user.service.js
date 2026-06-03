@@ -23,6 +23,11 @@ const mailer = nodemailer.createTransport({
   auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
 });
 
+mailer.verify((err) => {
+  if (err) console.error("[mailer] SMTP connection FAILED:", err.message);
+  else console.log("[mailer] SMTP ready, user:", process.env.MAIL_USER);
+});
+
 function generateToken(user) {
   return jwt.sign(
     {
