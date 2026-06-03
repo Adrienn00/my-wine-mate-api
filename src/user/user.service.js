@@ -3,7 +3,6 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 const User = require("./user.model.js");
 const bcrypt = require("bcrypt");
 const Wine = require("../wine/wine.model.js");
@@ -16,17 +15,25 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 const TRAINING_METRICS_PATH = path.join(__dirname, "../../ai/artifacts/training_metrics.json");
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://my-wine-mate.vercel.app";
 
-const mailer = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
-  auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
-});
-
-mailer.verify((err) => {
-  if (err) console.error("[mailer] SMTP connection FAILED:", err.message);
-  else console.log("[mailer] SMTP ready, user:", process.env.MAIL_USER);
-});
+async function sendEmail(to, subject, html) {
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": process.env.BREVO_API_KEY,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { name: "MyWineMate", email: process.env.MAIL_USER },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Brevo API error ${res.status}: ${text}`);
+  }
+}
 
 function generateToken(user) {
   return jwt.sign(
@@ -64,18 +71,16 @@ async function registerUser(userData) {
 
   const verifyUrl = `${FRONTEND_URL}/verify/${verificationToken}`;
   try {
-    await mailer.sendMail({
-      from: `"MyWineMate" <${process.env.MAIL_USER}>`,
-      to: savedUser.email,
-      subject: "Confirm your MyWineMate account",
-      html: `
-        <div style="font-family:sans-serif;max-width:480px;margin:auto">
-          <h2 style="color:#5d1f32">Welcome to MyWineMate 🍷</h2>
-          <p>Hi <strong>${savedUser.username}</strong>, click the button below to verify your email address. The link expires in 24 hours.</p>
-          <a href="${verifyUrl}" style="display:inline-block;margin:20px 0;padding:12px 28px;background:#5d1f32;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Verify Email</a>
-          <p style="color:#888;font-size:13px">Or copy this link: ${verifyUrl}</p>
-        </div>`,
-    });
+    await sendEmail(
+      savedUser.email,
+      "Confirm your MyWineMate account",
+      `<div style="font-family:sans-serif;max-width:480px;margin:auto">
+        <h2 style="color:#5d1f32">Welcome to MyWineMate 🍷</h2>
+        <p>Hi <strong>${savedUser.username}</strong>, click the button below to verify your email address. The link expires in 24 hours.</p>
+        <a href="${verifyUrl}" style="display:inline-block;margin:20px 0;padding:12px 28px;background:#5d1f32;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Verify Email</a>
+        <p style="color:#888;font-size:13px">Or copy this link: ${verifyUrl}</p>
+      </div>`
+    );
   } catch (mailErr) {
     console.error("[mailer] Failed to send verification email:", mailErr.message);
     await User.deleteOne({ _id: savedUser._id });
