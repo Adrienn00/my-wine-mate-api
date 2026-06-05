@@ -53,26 +53,28 @@ async function newRating(req, res) {
     });
 
     const latestRating = updateRatings?.ratings?.[updateRatings.ratings.length - 1];
+    const reviewer = latestRating?.userName || req.user?.email || "A user";
+    const stars = latestRating?.rating ?? "";
     const hasComment = String(latestRating?.comment || "").trim().length > 0;
+    const notifMsg = hasComment
+      ? `${reviewer} rated "${updateRatings.name}" (★${stars}) and left a review.`
+      : `${reviewer} rated "${updateRatings.name}" (★${stars}).`;
 
-    if (hasComment) {
-      const commenter = latestRating?.userName || req.user?.email || "A user";
-      const admins = await User.find({
-        isAdmin: true,
-        _id: { $ne: req.user?.id },
-      }).select("_id notifications");
+    const admins = await User.find({
+      isAdmin: true,
+      _id: { $ne: req.user?.id },
+    }).select("_id notifications");
 
-      await Promise.all(
-        admins.map(async (admin) => {
-          admin.notifications.push({
-            message: `A new comment was added to the wine "${updateRatings.name}" by ${commenter}.`,
-            type: "moderation",
-            link: `/wine/${updateRatings._id}`,
-          });
-          await admin.save();
-        })
-      );
-    }
+    await Promise.all(
+      admins.map(async (admin) => {
+        admin.notifications.push({
+          message: notifMsg,
+          type: "moderation",
+          link: `/wine/${updateRatings._id}`,
+        });
+        await admin.save();
+      })
+    );
 
     if (updateRatings) {
       res.status(200).json(updateRatings);

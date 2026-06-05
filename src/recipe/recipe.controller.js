@@ -37,6 +37,28 @@ async function newRating(req, res) {
     const updateRatings = await recipeService.addRating(id, rating, comment);
 
     if (updateRatings) {
+      const reviewer = req.user?.username || req.user?.email || "A user";
+      const hasComment = String(comment || "").trim().length > 0;
+      const notifMsg = hasComment
+        ? `${reviewer} rated "${updateRatings.name}" (★${rating}) and left a review.`
+        : `${reviewer} rated "${updateRatings.name}" (★${rating}).`;
+
+      const admins = await User.find({
+        isAdmin: true,
+        _id: { $ne: req.user?.id },
+      }).select("_id notifications");
+
+      await Promise.all(
+        admins.map(async (admin) => {
+          admin.notifications.push({
+            message: notifMsg,
+            type: "moderation",
+            link: `/recipe/${updateRatings._id}`,
+          });
+          await admin.save();
+        })
+      );
+
       res.status(200).json(updateRatings);
     } else {
       res.status(404).json({ message: "Recipe Not Found" });
