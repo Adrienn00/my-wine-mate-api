@@ -32,6 +32,28 @@ async function getWineById(id) {
   return await Wine.findById(id);
 }
 
+async function getRatingList() {
+  const wines = await Wine.find({ ratings: { $exists: true, $ne: [] } })
+    .select("_id name winery ratings")
+    .lean();
+
+  return wines.flatMap((wine) =>
+    (wine.ratings || [])
+      .map((rating, index) => ({
+        itemType: "wine",
+        itemId: wine._id,
+        itemName: wine.name,
+        itemSubtitle: wine.winery || "",
+        ratingId: String(rating?.ratingId || rating?._id || `idx-${index}`),
+        rating: rating?.overall ?? rating?.rating ?? null,
+        comment: String(rating?.comment || "").trim(),
+        userName: rating?.userName || "Unknown user",
+        createdAt: rating?.createdAt || null,
+      }))
+      .filter((entry) => entry.comment)
+  );
+}
+
 async function addWine(wine) {
   const newWine = new Wine({
     ...wine,
@@ -180,6 +202,7 @@ async function shareWineWithUser(wineId, senderUser, targetUsername) {
 module.exports = {
   getAllWines,
   getWineById,
+  getRatingList,
   addWine,
   updateWine,
   deleteWine,

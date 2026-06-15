@@ -33,11 +33,11 @@ async function newRating(req, res) {
   try {
     const id = req.params.id;
     const { rating, comment } = req.body;
+    const reviewer = req.user?.username || req.user?.email || "A user";
 
-    const updateRatings = await recipeService.addRating(id, rating, comment);
+    const updateRatings = await recipeService.addRating(id, rating, comment, reviewer);
 
     if (updateRatings) {
-      const reviewer = req.user?.username || req.user?.email || "A user";
       const hasComment = String(comment || "").trim().length > 0;
       const notifMsg = hasComment
         ? `${reviewer} rated "${updateRatings.name}" (★${rating}) and left a review.`
@@ -68,6 +68,35 @@ async function newRating(req, res) {
       message: "Error while updating ratings",
       error: err.message,
     });
+  }
+}
+
+async function getRatingList(req, res) {
+  try {
+    const ratings = await recipeService.getRatingList();
+    return res.status(200).json(ratings);
+  } catch (err) {
+    return res.status(500).json({
+      message: "Error while fetching recipe ratings",
+      error: err.message,
+    });
+  }
+}
+
+async function removeRating(req, res) {
+  try {
+    const id = req.params.id;
+    const ratingId = req.params.ratingId;
+    const updatedRecipe = await recipeService.deleteRating(id, ratingId);
+    return res.status(200).json(updatedRecipe);
+  } catch (err) {
+    if (err.message === "recipe not found") {
+      return res.status(404).json({ message: "Recipe Not Found" });
+    }
+    if (err.message === "rating not found") {
+      return res.status(404).json({ message: "Rating Not Found" });
+    }
+    return res.status(500).json({ message: "Error while deleting rating", error: err.message });
   }
 }
 
@@ -147,5 +176,7 @@ module.exports = {
   updateRecipe,
   deleteRecipe,
   newRating,
+  getRatingList,
+  removeRating,
   getRecipesById,
 };

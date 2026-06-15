@@ -25,6 +25,15 @@ async function getWineById(req, res) {
   }
 }
 
+async function getRatingList(req, res) {
+  try {
+    const ratings = await wineService.getRatingList();
+    return res.status(200).json(ratings);
+  } catch (err) {
+    return res.status(500).json({ message: "Error while fetching wine ratings", error: err.message });
+  }
+}
+
 async function addWine(req, res) {
   try {
     const wineData = {
@@ -233,6 +242,7 @@ async function aiEnrich(req, res) {
 module.exports = {
   getWines,
   getWineById,
+  getRatingList,
   addWine,
   updateWine,
   deleteWine,
