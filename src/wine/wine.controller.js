@@ -125,6 +125,7 @@ async function getLiveOffers(req, res) {
     const result = await liveOffersService.fetchLiveOffers({
       wineName: wine.name,
       winery: wine.winery,
+      year: wine.year,
     });
 
     return res.status(200).json({

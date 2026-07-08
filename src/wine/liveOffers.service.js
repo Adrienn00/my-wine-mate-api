@@ -8,7 +8,11 @@ function parsePriceToNumber(rawPrice) {
 }
 
 function mapSerpApiOffer(item = {}) {
-  const price = parsePriceToNumber(item.price);
+  const extractedPrice = Number(item.extracted_price);
+  const price =
+    Number.isFinite(extractedPrice)
+      ? extractedPrice
+      : parsePriceToNumber(item.price || item.price_from || item.price_to || item.snippet);
   return {
     shopName: item.source || item.seller || 'Unknown shop',
     title: item.title || '',
@@ -27,34 +31,34 @@ function buildFallbackOffers(wineName = '', winery = '') {
     {
       shopName: 'Arukereso',
       title: 'Search',
-      price: null,
       currency: 'RON',
       url: `https://www.arukereso.hu/?st=${query}`,
       imageUrl: '',
+      note: 'Quick price comparison',
     },
     {
       shopName: 'Google Shopping',
       title: 'Search',
-      price: null,
       currency: 'RON',
       url: `https://www.google.com/search?tbm=shop&q=${query}`,
       imageUrl: '',
+      note: 'Online store results',
     },
     {
       shopName: 'Wine-Searcher',
       title: 'Search',
-      price: null,
       currency: 'EUR',
       url: `https://www.wine-searcher.com/find/${query}`,
       imageUrl: '',
+      note: 'International offers',
     },
     {
       shopName: 'Vivino',
       title: 'Search',
-      price: null,
       currency: 'RON',
       url: `https://www.vivino.com/search/wines?q=${query}`,
       imageUrl: '',
+      note: 'Ratings and shops',
     },
   ];
 }
@@ -66,42 +70,85 @@ function getSerpApiKey() {
 function extractShoppingResults(payload = {}) {
   const primary = Array.isArray(payload.shopping_results) ? payload.shopping_results : [];
   const inline = Array.isArray(payload.inline_shopping_results) ? payload.inline_shopping_results : [];
-  return [...primary, ...inline];
+  const inlineResults = Array.isArray(payload.inline_results) ? payload.inline_results : [];
+  return [...primary, ...inline, ...inlineResults];
+}
+
+function dedupeOffers(offers = []) {
+  const seen = new Set();
+  return offers.filter((offer) => {
+    const key = `${offer.shopName}::${offer.url}`;
+    if (!offer.url || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function fetchSerpApiOffers(query, serpApiKey) {
-  const params = new URLSearchParams({
-    engine: 'google_shopping',
-    q: query,
-    gl: 'ro',
-    hl: 'hu',
-    api_key: serpApiKey,
-  });
+  const parameterSets = [
+    {
+      engine: 'google_shopping',
+      q: query,
+      google_domain: 'google.ro',
+      gl: 'ro',
+      hl: 'ro',
+      api_key: serpApiKey,
+    },
+    {
+      engine: 'google_shopping',
+      q: query,
+      google_domain: 'google.com',
+      gl: 'ro',
+      hl: 'en',
+      api_key: serpApiKey,
+    },
+    {
+      engine: 'google',
+      q: query,
+      google_domain: 'google.ro',
+      gl: 'ro',
+      hl: 'ro',
+      tbm: 'shop',
+      api_key: serpApiKey,
+    },
+  ];
 
-  const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
-  if (!response.ok) {
-    throw new Error(`SerpAPI error ${response.status}`);
+  for (const currentParams of parameterSets) {
+    const params = new URLSearchParams(currentParams);
+    const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`SerpAPI error ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const offers = dedupeOffers(
+      extractShoppingResults(payload)
+      .map(mapSerpApiOffer)
+      .filter((offer) => offer.url)
+    ).slice(0, 12);
+
+    if (offers.length) {
+      return offers;
+    }
   }
 
-  const payload = await response.json();
-  return extractShoppingResults(payload)
-    .map(mapSerpApiOffer)
-    .filter((offer) => offer.url)
-    .slice(0, 12);
+  return [];
 }
 
-async function fetchLiveOffers({ wineName, winery }) {
+async function fetchLiveOffers({ wineName, winery, year = null }) {
   const serpApiKey = getSerpApiKey();
   if (!serpApiKey) {
     return { offers: buildFallbackOffers(wineName, winery), source: 'fallback', stale: true };
   }
 
-  const query = [wineName, winery].filter(Boolean).join(' ').trim();
+  const normalizedYear = Number.isFinite(Number(year)) ? String(year).trim() : '';
+  const query = [wineName, normalizedYear, winery].filter(Boolean).join(' ').trim();
   if (!query) return { offers: [], source: 'serpapi', stale: false };
 
   try {
     const searchQueries = [
       query,
+      [wineName, normalizedYear].filter(Boolean).join(' ').trim(),
       wineName ? String(wineName).trim() : '',
     ].filter(Boolean);
 
