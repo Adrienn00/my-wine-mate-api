@@ -1,4 +1,4 @@
-const { runConversationalChat, streamConversationalChat } = require("./pairingChat.service");
+const { runConversationalChat, streamConversationalChat, mapChatError } = require("./pairingChat.service");
 
 async function chat(req, res) {
   try {
@@ -20,11 +20,10 @@ async function chat(req, res) {
 
     return res.status(200).json(result);
   } catch (error) {
-    const message = String(error.message || "");
-    const statusCode = message.includes("Pass at least one") ? 400 : 500;
-    return res.status(statusCode).json({
-      message: "Error in conversational chat",
-      error: error.message,
+    const mappedError = mapChatError(error);
+    return res.status(mappedError.statusCode).json({
+      message: mappedError.userMessage,
+      code: mappedError.code,
     });
   }
 }

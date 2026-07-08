@@ -59,15 +59,17 @@ function buildFallbackOffers(wineName = '', winery = '') {
   ];
 }
 
-async function fetchLiveOffers({ wineName, winery }) {
-  const serpApiKey = process.env.SERPAPI_KEY;
-  if (!serpApiKey) {
-    return { offers: buildFallbackOffers(wineName, winery), source: 'fallback', stale: true };
-  }
+function getSerpApiKey() {
+  return process.env.SERPAPI_KEY || process.env.SERP_API_KEY || '';
+}
 
-  const query = [wineName, winery].filter(Boolean).join(' ').trim();
-  if (!query) return { offers: [], source: 'serpapi', stale: false };
+function extractShoppingResults(payload = {}) {
+  const primary = Array.isArray(payload.shopping_results) ? payload.shopping_results : [];
+  const inline = Array.isArray(payload.inline_shopping_results) ? payload.inline_shopping_results : [];
+  return [...primary, ...inline];
+}
 
+async function fetchSerpApiOffers(query, serpApiKey) {
   const params = new URLSearchParams({
     engine: 'google_shopping',
     q: query,
@@ -76,27 +78,45 @@ async function fetchLiveOffers({ wineName, winery }) {
     api_key: serpApiKey,
   });
 
-  try {
-    const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error(`SerpAPI error ${response.status}`);
-    }
+  const response = await fetch(`https://serpapi.com/search.json?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`SerpAPI error ${response.status}`);
+  }
 
-    const payload = await response.json();
-    const shoppingResults = Array.isArray(payload.shopping_results) ? payload.shopping_results : [];
-    const offers = shoppingResults
-      .map(mapSerpApiOffer)
-      .filter((offer) => offer.url)
-      .slice(0, 12);
+  const payload = await response.json();
+  return extractShoppingResults(payload)
+    .map(mapSerpApiOffer)
+    .filter((offer) => offer.url)
+    .slice(0, 12);
+}
 
-    if (!offers.length) {
-      return { offers: buildFallbackOffers(wineName, winery), source: 'fallback', stale: true };
-    }
-
-    return { offers, source: 'serpapi', stale: false };
-  } catch {
+async function fetchLiveOffers({ wineName, winery }) {
+  const serpApiKey = getSerpApiKey();
+  if (!serpApiKey) {
     return { offers: buildFallbackOffers(wineName, winery), source: 'fallback', stale: true };
   }
+
+  const query = [wineName, winery].filter(Boolean).join(' ').trim();
+  if (!query) return { offers: [], source: 'serpapi', stale: false };
+
+  try {
+    const searchQueries = [
+      query,
+      wineName ? String(wineName).trim() : '',
+    ].filter(Boolean);
+
+    for (const currentQuery of searchQueries) {
+      const offers = await fetchSerpApiOffers(currentQuery, serpApiKey);
+      if (offers.length) {
+        return { offers, source: 'serpapi', stale: false };
+      }
+    }
+  } catch (error) {
+    console.warn('Live offers SerpAPI request failed:', error.message);
+    return { offers: buildFallbackOffers(wineName, winery), source: 'fallback', stale: true };
+  }
+
+  return { offers: buildFallbackOffers(wineName, winery), source: 'fallback', stale: true };
 }
 
 module.exports = {
