@@ -3,7 +3,7 @@ const router = express.Router();
 
 const wineController = require("./wine.controller");
 const wineRecommendationController = require("./wineRecommendation.controller");
-const { authMiddleware, adminMiddleware } = require("../user/user.middleware");
+const { authMiddleware, optionalAuthMiddleware, adminMiddleware } = require("../user/user.middleware");
 
 router.post("/ocr-scan", wineController.ocrScan);
 router.post("/ai-enrich", wineController.aiEnrich);
@@ -14,7 +14,7 @@ router.post("/recommendations/split", authMiddleware, wineRecommendationControll
 router.post("/:id/rating", authMiddleware, wineController.newRating);
 router.post("/:id/share", authMiddleware, wineController.shareWine);
 router.delete("/:id/rating/:ratingId", authMiddleware, adminMiddleware, wineController.removeRating);
-router.get("/:id/live-offers", authMiddleware, wineController.getLiveOffers);
+router.get("/:id/live-offers", optionalAuthMiddleware, wineController.getLiveOffers);
 
 router.get("/", wineController.getWines);
 router.get("/admin/ratings", authMiddleware, adminMiddleware, wineController.getRatingList);
